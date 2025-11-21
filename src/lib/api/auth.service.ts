@@ -1,17 +1,17 @@
-import { API_CONFIG, TOKEN_KEYS } from './config'
+import { TOKEN_KEYS } from './config'
+import apiClient from './client'
+import type { 
+  LoginDto, 
+  RegisterDto, 
+  LoginResponseDto, 
+  RegisterResponseDto 
+} from './index'
 
 // Types cho API request/response
-export interface LoginRequest {
-  identifier: string  // Có thể là email hoặc phone
-  password: string
-}
+export interface LoginRequest extends LoginDto {}
 
-export interface RegisterRequest {
-  email: string
-  password: string
-  confirmPassword: string
-  phoneNumber: string
-  accountType: 'CUSTOMER' | 'WORKER'
+export interface RegisterRequest extends RegisterDto {
+  role?: 'customer' | 'provider'
 }
 
 export interface AuthResponse {
@@ -19,73 +19,45 @@ export interface AuthResponse {
   refreshToken: string
   user: {
     id: string
-    email: string
-    phoneNumber: string
-    accountType: string
-    createdAt: string
+    email?: string
+    phone?: string
+    fullName?: string
   }
 }
 
-export interface ApiError {
-  message: string
-  statusCode: number
-  error?: string
-}
-
-// Auth Service
+// Auth Service sử dụng SDK
 export class AuthService {
-  private static getHeaders() {
-    return {
-      ...API_CONFIG.HEADERS,
-    }
-  }
 
   // Đăng nhập
   static async login(data: LoginRequest): Promise<AuthResponse> {
     try {
-      console.log('🔵 Login Request:', {
-        url: `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`,
-        data: { ...data, password: '***' }
+      console.log('🔵 Login Request:', { ...data, password: '***' })
+
+      // Gọi qua proxy route để tránh CORS
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       })
 
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify(data),
-        }
-      )
-
-      console.log('🔵 Login Response Status:', response.status)
+      const responseData = await response.json()
+      
+      console.log('✅ Login Response Status:', response.status)
+      console.log('✅ Login Response Data:', responseData)
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ Login Error Response:', errorText)
-        
-        let error: ApiError
-        try {
-          error = JSON.parse(errorText)
-        } catch {
-          error = { message: errorText || 'Đăng nhập thất bại', statusCode: response.status }
-        }
-        
-        // Tùy chỉnh thông báo lỗi thân thiện
-        let userMessage = error.message || 'Đăng nhập thất bại'
-        if (response.status === 401 || error.message?.toLowerCase().includes('unauthorized') || 
-            error.message?.toLowerCase().includes('invalid') || error.message?.toLowerCase().includes('incorrect')) {
-          userMessage = 'Email/Số điện thoại hoặc mật khẩu không đúng. Vui lòng kiểm tra lại!'
-        } else if (response.status === 400) {
-          userMessage = 'Thông tin đăng nhập không hợp lệ. Vui lòng kiểm tra lại!'
-        } else if (response.status === 404) {
-          userMessage = 'Tài khoản không tồn tại. Vui lòng đăng ký tài khoản mới!'
-        }
-        
-        throw new Error(userMessage)
+        const errorMessage = responseData.message || 'Đăng nhập thất bại'
+        console.error('❌ Login failed:', errorMessage)
+        throw new Error(errorMessage)
       }
 
-      const result: AuthResponse = await response.json()
-      console.log('✅ Login Success:', { user: result.user })
+      if (!responseData.data) {
+        throw new Error('Không nhận được dữ liệu từ server')
+      }
+
+      const result = responseData.data
       
       // Lưu token vào localStorage
       if (typeof window !== 'undefined') {
@@ -93,103 +65,88 @@ export class AuthService {
         localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, result.refreshToken)
       }
 
-      return result
-    } catch (error) {
-      console.error('❌ Login Error:', error)
-      if (error instanceof Error) {
-        throw error
+      console.log('✅ Login Success!')
+
+      return {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user as any
       }
-      throw new Error('Có lỗi xảy ra khi đăng nhập')
+    } catch (error: any) {
+      console.error('❌ Login Error:', error)
+      
+      let userMessage = 'Đăng nhập thất bại'
+      
+      if (error?.message) {
+        userMessage = error.message
+      }
+      
+      throw new Error(userMessage)
     }
   }
 
   // Đăng ký
-  static async register(data: RegisterRequest): Promise<AuthResponse> {
+  static async register(data: RegisterRequest): Promise<{ success: boolean, message: string }> {
     try {
-      console.log('🔵 Register Request:', {
-        url: `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.REGISTER}`,
-        data: { ...data, password: '***', confirmPassword: '***' }
+      console.log('🔵 Register Request:', { ...data, password: '***' })
+
+      // Gọi qua proxy route để tránh CORS
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
       })
 
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.REGISTER}`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify(data),
-        }
-      )
-
-      console.log('🔵 Register Response Status:', response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error('❌ Register Error Response:', errorText)
-        
-        let error: ApiError
-        try {
-          error = JSON.parse(errorText)
-        } catch {
-          error = { message: errorText || 'Đăng ký thất bại', statusCode: response.status }
-        }
-        
-        // Tùy chỉnh thông báo lỗi thân thiện
-        let userMessage = error.message || 'Đăng ký thất bại'
-        if (response.status === 409 || error.message?.toLowerCase().includes('exist') || 
-            error.message?.toLowerCase().includes('duplicate')) {
-          userMessage = 'Email hoặc số điện thoại đã được sử dụng. Vui lòng thử email/số điện thoại khác!'
-        } else if (response.status === 400) {
-          userMessage = 'Thông tin đăng ký không hợp lệ. Vui lòng kiểm tra lại!'
-        }
-        
-        throw new Error(userMessage)
-      }
-
-      const result: AuthResponse = await response.json()
-      console.log('✅ Register Success:', { user: result.user })
+      const responseData = await response.json()
       
-      // Lưu token vào localStorage
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(TOKEN_KEYS.ACCESS_TOKEN, result.accessToken)
-        localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, result.refreshToken)
+      console.log('✅ Register API Response Status:', response.status)
+      console.log('✅ Register API Response Data:', responseData)
+
+      // Kiểm tra nếu response không OK (status 4xx, 5xx)
+      if (!response.ok) {
+        console.error('❌ Register failed with status:', response.status)
+        const errorMessage = responseData.message || 'Đăng ký thất bại'
+        throw new Error(errorMessage)
       }
 
-      return result
-    } catch (error) {
-      console.error('❌ Register Error:', error)
-      if (error instanceof Error) {
-        throw error
+      // Kiểm tra nếu response có success field và = false
+      if (responseData.success === false) {
+        console.error('❌ Register failed:', responseData.message)
+        throw new Error(responseData.message || 'Đăng ký thất bại')
       }
-      throw new Error('Có lỗi xảy ra khi đăng ký')
+
+      console.log('✅ Register Success!')
+
+      // Trả về success để component redirect về trang đăng nhập
+      return {
+        success: true,
+        message: responseData.message || 'Đăng ký thành công'
+      }
+    } catch (error: any) {
+      console.error('❌ Register Error:', error)
+      
+      let userMessage = 'Đăng ký thất bại'
+      
+      if (error?.message) {
+        userMessage = error.message
+      }
+      
+      throw new Error(userMessage)
     }
   }
 
   // Làm mới token
   static async refreshToken(): Promise<AuthResponse> {
     try {
-      const refreshToken = typeof window !== 'undefined' 
-        ? localStorage.getItem(TOKEN_KEYS.REFRESH_TOKEN)
-        : null
-
-      if (!refreshToken) {
-        throw new Error('Không tìm thấy refresh token')
+      const response = await apiClient.auth.authControllerRefresh()
+      
+      if (!response.data || !response.data.data) {
+        throw new Error('Làm mới token thất bại')
       }
 
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.REFRESH}`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify({ refreshToken }),
-        }
-      )
-
-      if (!response.ok) {
-        const error: ApiError = await response.json()
-        throw new Error(error.message || 'Làm mới token thất bại')
-      }
-
-      const result: AuthResponse = await response.json()
+      const result = response.data.data
       
       // Cập nhật token mới
       if (typeof window !== 'undefined') {
@@ -197,7 +154,11 @@ export class AuthService {
         localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, result.refreshToken)
       }
 
-      return result
+      return {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user as any
+      }
     } catch (error) {
       if (error instanceof Error) {
         throw error
@@ -209,22 +170,7 @@ export class AuthService {
   // Đăng xuất
   static async logout(): Promise<void> {
     try {
-      const accessToken = typeof window !== 'undefined'
-        ? localStorage.getItem(TOKEN_KEYS.ACCESS_TOKEN)
-        : null
-
-      if (accessToken) {
-        await fetch(
-          `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGOUT}`,
-          {
-            method: 'POST',
-            headers: {
-              ...this.getHeaders(),
-              'Authorization': `Bearer ${accessToken}`,
-            },
-          }
-        )
-      }
+      await apiClient.auth.authControllerLogout()
     } catch (error) {
       console.error('Lỗi khi đăng xuất:', error)
     } finally {

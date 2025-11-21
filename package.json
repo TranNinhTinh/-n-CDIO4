@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "generate:sdk": "swagger-typescript-api generate -p https://postmaxillary-variably-justa.ngrok-free.dev/api-json -o src/lib/api -n index.ts"
+    "download:swagger": "powershell -Command \"Invoke-WebRequest -Uri 'https://postmaxillary-variably-justa.ngrok-free.dev/api-json' -OutFile 'swagger.json' -Headers @{'ngrok-skip-browser-warning'='true'}\"",
+    "generate:sdk": "npm run download:swagger && swagger-typescript-api generate -p swagger.json -o src/lib/api -n index.ts",
+    "generate:sdk:clean": "npm run generate:sdk && del swagger.json"
   },
   "dependencies": {
     "next": "14.0.4",

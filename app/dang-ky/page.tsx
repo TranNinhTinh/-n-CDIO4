@@ -10,10 +10,12 @@ export default function DangKy() {
   const router = useRouter()
   const [accountType, setAccountType] = useState<'CUSTOMER' | 'WORKER' | null>(null)
   const [formData, setFormData] = useState({
+    fullName: '',
     email: '',
     phone: '',
     password: '',
     confirmPassword: ''
+    
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -27,6 +29,24 @@ export default function DangKy() {
       setError('Vui lòng chọn loại tài khoản!')
       return
     }
+
+    // Kiểm tra các trường bắt buộc
+    if (!formData.fullName.trim()) {
+      setError('Vui lòng nhập họ và tên!')
+      return
+    }
+    if (!formData.email.trim()) {
+      setError('Vui lòng nhập email!')
+      return
+    }
+    if (!formData.phone.trim()) {
+      setError('Vui lòng nhập số điện thoại!')
+      return
+    }
+    if (!formData.password) {
+      setError('Vui lòng nhập mật khẩu!')
+      return
+    }
     
     // Kiểm tra mật khẩu khớp
     if (formData.password !== formData.confirmPassword) {
@@ -38,29 +58,37 @@ export default function DangKy() {
 
     try {
       // Chuẩn bị dữ liệu đăng ký
-      const registerData: RegisterRequest = {
-        email: formData.email,
-        password: formData.password,
-        confirmPassword: formData.confirmPassword,
-        phoneNumber: formData.phone,
-        accountType: accountType
+      // Format số điện thoại: thêm +84 nếu chưa có
+      let phoneNumber = formData.phone.trim()
+      if (phoneNumber.startsWith('0')) {
+        phoneNumber = '+84' + phoneNumber.substring(1)
+      } else if (!phoneNumber.startsWith('+')) {
+        phoneNumber = '+84' + phoneNumber
       }
+
+      const registerData: RegisterRequest = {
+        fullName: formData.fullName.trim(),
+        email: formData.email.trim(),
+        phone: phoneNumber,
+        password: formData.password,
+        role: accountType === 'CUSTOMER' ? 'customer' : 'provider'
+      }
+
+      console.log('📝 Sending register data:', { 
+        ...registerData, 
+        password: '***'
+      })
 
       // Gọi API đăng ký
       const response = await AuthService.register(registerData)
       
       console.log('✅ Đăng ký thành công:', response)
       
-      // Xóa token sau khi đăng ký (buộc người dùng phải đăng nhập lại)
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-      }
-      
-      // Chuyển hướng đến trang đăng nhập
+      // Chuyển hướng đến trang đăng nhập sau khi đăng ký thành công
       alert('Đăng ký thành công! Vui lòng đăng nhập để tiếp tục.')
       router.push('/dang-nhap')
     } catch (err) {
+      console.error('❌ Lỗi đăng ký:', err)
       if (err instanceof Error) {
         setError(err.message)
       } else {
@@ -149,6 +177,20 @@ export default function DangKy() {
               {error}
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Họ và tên
+            </label>
+            <input
+              type="text"
+              value={formData.fullName}
+              onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              placeholder="Họ và tên"
+              required
+            />
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">

@@ -8,15 +8,28 @@ export async function POST(request: NextRequest) {
     
     console.log('🔵 Proxy Register Request:', JSON.stringify(body, null, 2))
 
-    // Thử các tên field khác nhau cho phone
+    // Format phone number nếu cần
+    let phone = body.phone || body.phoneNumber
+    if (phone && !phone.startsWith('+')) {
+      if (phone.startsWith('0')) {
+        phone = '+84' + phone.substring(1)
+      } else if (!phone.startsWith('84')) {
+        phone = '+84' + phone
+      } else {
+        phone = '+' + phone
+      }
+    }
+
+    // Chuẩn bị payload cho backend
     const registerPayload = {
-      ...body,
-      // Đảm bảo có cả phoneNumber và phone
-      phone: body.phoneNumber || body.phone,
-      phoneNumber: body.phoneNumber || body.phone,
+      fullName: body.fullName,
+      email: body.email,
+      phone: phone,
+      password: body.password,
+      role: body.role, // Backend yêu cầu role: 'customer' hoặc 'provider'
     }
     
-    console.log('📤 Sending to backend:', JSON.stringify(registerPayload, null, 2))
+    console.log('📤 Sending to backend:', JSON.stringify({ ...registerPayload, password: '***' }, null, 2))
 
     const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
       method: 'POST',
@@ -34,7 +47,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('❌ Proxy Register Error:', error)
     return NextResponse.json(
-      { message: 'Internal server error', error: String(error) },
+      { success: false, message: 'Internal server error', error: String(error) },
       { status: 500 }
     )
   }

@@ -7,7 +7,7 @@ export default function Home() {
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
         <div className="mb-8">
           <div className="flex justify-center mb-6">
-            <ThoTotLogo className="w-64 md:w-72" />
+            <ThoTotLogo className="w-40 md:w-48" />
           </div>
           <p className="text-gray-600">Kết nối khách hàng và thợ chuyên nghiệp</p>
         </div>
