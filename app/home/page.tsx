@@ -22,15 +22,53 @@ export default function HomePage() {
   const [showCategories, setShowCategories] = useState(true)
   const [showServices, setShowServices] = useState(true)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [posts, setPosts] = useState<any[]>([])
+  const [loadingPosts, setLoadingPosts] = useState(true)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+
+  // Load bài đăng từ API
+  const loadPosts = async () => {
+    try {
+      setLoadingPosts(true)
+      const response = await PostService.getFeed({ limit: 20 })
+      
+      // Response type là FeedResponseDto: { data: PostResponseDto[], nextCursor?, total, hasMore }
+      if (response.data && Array.isArray(response.data)) {
+        setPosts(response.data)
+      } else {
+        console.warn('⚠️ Không có bài đăng nào')
+        setPosts([])
+      }
+    } catch (error) {
+      console.error('❌ Lỗi load bài đăng:', error)
+      setPosts([])
+    } finally {
+      setLoadingPosts(false)
+    }
+  }
 
   // Kiểm tra authentication khi component mount
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       if (!AuthService.isAuthenticated()) {
         // Chưa đăng nhập, chuyển về trang đăng nhập
         router.push('/dang-nhap')
       } else {
+        // Load current user ID from localStorage
+        const userDataStr = localStorage.getItem('user_data')
+        if (userDataStr) {
+          try {
+            const userData = JSON.parse(userDataStr)
+            setCurrentUser(userData)
+          } catch (e) {
+            console.error('Error parsing user data:', e)
+          }
+        }
+        
         setIsLoading(false)
+        // Load bài đăng
+        await loadPosts()
       }
     }
     
@@ -147,8 +185,41 @@ export default function HomePage() {
     }
   ]
 
-  // Dữ liệu mẫu cho bài đăng
-  const posts = [
+  // Handlers cho post actions
+  const handleClosePost = async (postId: string) => {
+    if (!confirm('Bạn có chắc muốn đóng bài đăng này?')) return
+    
+    try {
+      await PostService.closePost(postId)
+      alert('Đóng bài đăng thành công!')
+      await loadPosts() // Reload posts
+      setOpenMenuId(null)
+    } catch (error: any) {
+      console.error('Error closing post:', error)
+      alert(error.message || 'Không thể đóng bài đăng')
+    }
+  }
+
+  const handleEditPost = (postId: string) => {
+    router.push(`/posts/create?edit=${postId}`)
+  }
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm('Bạn có chắc muốn xóa bài đăng này? Hành động này không thể hoàn tác!')) return
+    
+    try {
+      await PostService.deletePost(postId)
+      alert('Xóa bài đăng thành công!')
+      await loadPosts() // Reload posts
+      setOpenMenuId(null)
+    } catch (error: any) {
+      console.error('Error deleting post:', error)
+      alert(error.message || 'Không thể xóa bài đăng')
+    }
+  }
+
+  // Dữ liệu mẫu cho bài đăng (dùng khi không có API)
+  const mockPosts = [
     {
       id: 1,
       author: 'Nguyễn Thị Mai',
@@ -534,8 +605,11 @@ export default function HomePage() {
                     setPostTitle('')
                     alert('Tạo bài đăng thành công!')
                     
-                    // Chuyển đến trang chi tiết bài đăng
-                    router.push(`/posts/${result.id}`)
+                    // Reload danh sách bài đăng để hiển thị bài mới
+                    await loadPosts()
+                    
+                    // Có thể chuyển đến trang chi tiết nếu muốn
+                    // router.push(`/posts/${result.id}`)
                   } catch (error: any) {
                     console.error('❌ Lỗi tạo bài:', error)
                     setPostError(error.message || 'Không thể tạo bài đăng. Vui lòng thử lại!')
@@ -876,12 +950,29 @@ export default function HomePage() {
             </div>
 
             {/* Posts */}
-            {isLoading ? (
+            {loadingPosts ? (
               <>
                 <SkeletonPost />
                 <SkeletonPost />
                 <SkeletonPost />
               </>
+            ) : posts.length === 0 ? (
+              <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+                <svg className="w-20 h-20 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                </svg>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">Chưa có bài đăng nào</h3>
+                <p className="text-gray-500 mb-6">Hãy là người đầu tiên tạo bài đăng!</p>
+                <button
+                  onClick={() => setShowCreatePost(true)}
+                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Tạo bài đăng
+                </button>
+              </div>
             ) : (
               posts.map(post => (
                 <div key={post.id} className="bg-white rounded-lg shadow-sm mb-4 overflow-hidden">
@@ -889,23 +980,111 @@ export default function HomePage() {
                 <div className="p-4 border-b border-gray-100">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 bg-gradient-to-br ${post.avatarColor} rounded-full flex items-center justify-center text-white font-semibold`}>
-                        {post.avatar}
+                      <div className={`w-10 h-10 bg-gradient-to-br ${post.avatarColor || post.customer?.avatarUrl || 'from-blue-400 to-blue-600'} rounded-full flex items-center justify-center text-white font-semibold`}>
+                        {post.avatar || (post.customer?.fullName ? post.customer.fullName.charAt(0).toUpperCase() : 'U')}
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-800">{post.author}</h3>
+                        <h3 className="font-semibold text-gray-800">{post.author || post.customer?.fullName || 'Người dùng'}</h3>
                         <div className="flex items-center space-x-2 text-xs text-gray-500">
-                          <span>{post.time}</span>
+                          <span>{post.time || new Date(post.createdAt).toLocaleDateString('vi-VN')}</span>
                           <span>•</span>
-                          <span>{post.location}</span>
+                          <span>{post.location || 'Chưa cập nhật'}</span>
                         </div>
                       </div>
                     </div>
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                      </svg>
-                    </button>
+                    
+                    {/* Dropdown Menu - Luôn hiển thị nút, kiểm tra ownership trong menu */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setOpenMenuId(openMenuId === post.id ? null : post.id)
+                        }}
+                        className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors"
+                      >
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                        </svg>
+                      </button>
+
+                      {/* Dropdown Menu */}
+                      {openMenuId === post.id && (
+                        <div 
+                          className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {/* Kiểm tra ownership */}
+                          {currentUser && post.customerId === currentUser.id ? (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleEditPost(post.id)
+                                }}
+                                className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                <span>Chỉnh sửa</span>
+                              </button>
+
+                              {post.status === 'OPEN' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleClosePost(post.id)
+                                  }}
+                                  className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  <span>Đóng bài đăng</span>
+                                </button>
+                              )}
+
+                              <div className="border-t border-gray-200 my-2"></div>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeletePost(post.id)
+                                }}
+                                className="w-full px-4 py-2 text-left hover:bg-red-50 flex items-center gap-3 text-red-600 text-sm transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span>Xóa</span>
+                              </button>
+                            </>
+                          ) : (
+                            <div className="px-4 py-3">
+                              <p className="text-sm text-gray-500 text-center">
+                                {!currentUser ? 'Vui lòng đăng nhập' : 'Chỉ chủ bài đăng mới có thể chỉnh sửa'}
+                              </p>
+                              <div className="mt-2 pt-2 border-t border-gray-200">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    console.log('Debug Info:', {
+                                      currentUserId: currentUser?.id,
+                                      postCustomerId: post.customerId,
+                                      post: post
+                                    })
+                                    alert('Debug: Check console for user/post info')
+                                  }}
+                                  className="w-full text-xs text-blue-600 hover:underline"
+                                >
+                                  Debug Info
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -976,7 +1155,7 @@ export default function HomePage() {
                 {/* Comments Section */}
                 {post.commentList && post.commentList.length > 0 && (
                   <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
-                    {post.commentList.map(comment => (
+                    {post.commentList.map((comment: any) => (
                       <div key={comment.id} className="flex items-start space-x-3 mb-3 last:mb-0">
                         <div className={`w-8 h-8 ${comment.avatarBg} rounded-full flex items-center justify-center text-white text-sm font-semibold`}>
                           {comment.avatar}

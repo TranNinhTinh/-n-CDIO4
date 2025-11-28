@@ -38,6 +38,11 @@ export default function DangNhap() {
       
       console.log('✅ Đăng nhập thành công:', response)
       
+      // Lưu user data vào localStorage để sử dụng sau này
+      if (response.user) {
+        localStorage.setItem('user_data', JSON.stringify(response.user))
+      }
+      
       // Chuyển hướng đến trang home
       router.push('/home')
     } catch (err) {

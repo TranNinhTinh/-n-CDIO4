@@ -18,12 +18,25 @@ export default function PostDetailPage() {
   const [newComment, setNewComment] = useState('')
   const [isApplying, setIsApplying] = useState(false)
   const [error, setError] = useState('')
+  const [showMenu, setShowMenu] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
   useEffect(() => {
     // Kiểm tra authentication
     if (!AuthService.isAuthenticated()) {
       router.push('/dang-nhap')
       return
+    }
+
+    // Load current user from localStorage
+    const userDataStr = localStorage.getItem('user_data')
+    if (userDataStr) {
+      try {
+        const userData = JSON.parse(userDataStr)
+        setCurrentUser(userData)
+      } catch (e) {
+        console.error('Error parsing user data:', e)
+      }
     }
 
     // Load post data
@@ -62,6 +75,40 @@ export default function PostDetailPage() {
     alert('Chức năng bình luận sẽ được cập nhật sau!')
     setNewComment('')
   }
+
+  const handleClosePost = async () => {
+    if (!confirm('Bạn có chắc muốn đóng bài đăng này?')) return
+    
+    try {
+      await PostService.closePost(postId)
+      alert('Đóng bài đăng thành công!')
+      loadPost() // Reload to see updated status
+      setShowMenu(false)
+    } catch (error: any) {
+      console.error('Error closing post:', error)
+      alert(error.message || 'Không thể đóng bài đăng')
+    }
+  }
+
+  const handleEditPost = () => {
+    router.push(`/posts/create?edit=${postId}`)
+  }
+
+  const handleDeletePost = async () => {
+    if (!confirm('Bạn có chắc muốn xóa bài đăng này? Hành động này không thể hoàn tác!')) return
+    
+    try {
+      await PostService.deletePost(postId)
+      alert('Xóa bài đăng thành công!')
+      router.push('/home')
+    } catch (error: any) {
+      console.error('Error deleting post:', error)
+      alert(error.message || 'Không thể xóa bài đăng')
+    }
+  }
+
+  // Kiểm tra xem user có phải chủ bài đăng không
+  const isOwner = currentUser && post && currentUser.id === post.customerId
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -134,11 +181,64 @@ export default function PostDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* Post Info Card */}
             <div className="bg-white rounded-xl shadow-sm p-6">
-              {/* Status Badge */}
-              <div className="mb-4">
+              {/* Header với Status và Menu */}
+              <div className="flex items-start justify-between mb-4">
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
                   {post.status}
                 </span>
+                
+                {/* Dropdown Menu (chỉ hiển thị nếu là chủ bài đăng) */}
+                {isOwner && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowMenu(!showMenu)}
+                      className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                      <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                      </svg>
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {showMenu && (
+                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
+                        <button
+                          onClick={handleEditPost}
+                          className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 transition-colors"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span>Chỉnh sửa bài đăng</span>
+                        </button>
+
+                        {post.status === 'OPEN' && (
+                          <button
+                            onClick={handleClosePost}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 transition-colors"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Đóng bài đăng</span>
+                          </button>
+                        )}
+
+                        <div className="border-t border-gray-200 my-2"></div>
+
+                        <button
+                          onClick={handleDeletePost}
+                          className="w-full px-4 py-2 text-left hover:bg-red-50 flex items-center gap-3 text-red-600 transition-colors"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          <span>Xóa bài đăng</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Title */}
