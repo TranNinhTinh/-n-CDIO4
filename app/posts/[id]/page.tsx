@@ -7,6 +7,7 @@ import { PostService } from '@/lib/api/post.service'
 import type { PostResponseDto } from '@/lib/api'
 import Image from 'next/image'
 import SkeletonPostDetail from '@/app/components/SkeletonPostDetail'
+import ThoTotLogo from '@/app/components/ThoTotLogo'
 
 export default function PostDetailPage() {
   const router = useRouter()
@@ -20,6 +21,7 @@ export default function PostDetailPage() {
   const [error, setError] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [authorAvatar, setAuthorAvatar] = useState<string | null>(null)
 
   useEffect(() => {
     // Kiểm tra authentication
@@ -49,7 +51,34 @@ export default function PostDetailPage() {
     
     try {
       const data = await PostService.getPostById(postId)
+      console.log('📦 Post data loaded:', data)
       setPost(data)
+      
+      // Lấy userId từ customer object
+      let userId = null
+      if (data.customer && typeof data.customer === 'object') {
+        userId = data.customer.id
+        console.log('👤 Customer ID from object:', userId)
+      } else if (data.customerId) {
+        userId = data.customerId
+        console.log('🆔 Customer ID direct:', userId)
+      }
+      
+      if (userId) {
+        const avatarKey = `user_avatar_${userId}`
+        console.log('🔑 Looking for avatar key:', avatarKey)
+        const savedAvatar = localStorage.getItem(avatarKey)
+        
+        if (savedAvatar) {
+          setAuthorAvatar(savedAvatar)
+          console.log('✅ Avatar loaded successfully')
+        } else {
+          console.warn('⚠️ No avatar in localStorage for userId:', userId)
+          console.log('💡 User needs to upload avatar in profile page first')
+        }
+      } else {
+        console.error('❌ Could not find userId in post data')
+      }
     } catch (err: any) {
       console.error('Error loading post:', err)
       setError(err.message || 'Không thể tải bài đăng')
@@ -162,16 +191,7 @@ export default function PostDetailPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
-          <div className="flex items-center gap-3">
-            <Image 
-              src="/thotot-logo.png" 
-              alt="THỢ TỐT" 
-              width={40} 
-              height={40}
-              className="object-contain"
-            />
-            <h1 className="text-xl font-bold text-gray-800">Chi tiết công việc</h1>
-          </div>
+          <h1 className="text-xl font-bold text-gray-800">Chi tiết công việc</h1>
         </div>
       </header>
 
@@ -336,9 +356,17 @@ export default function PostDetailPage() {
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Người đăng</h3>
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold text-lg">
-                    {post.customer.fullName ? post.customer.fullName.charAt(0).toUpperCase() : 'U'}
-                  </div>
+                  {authorAvatar ? (
+                    <img 
+                      src={authorAvatar} 
+                      alt={post.customer.fullName || 'Avatar'} 
+                      className="w-12 h-12 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold text-lg">
+                      {post.customer.fullName ? post.customer.fullName.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                  )}
                   <div className="flex-1">
                     <h4 className="font-semibold text-gray-900">{post.customer.fullName || 'Người dùng'}</h4>
                   </div>

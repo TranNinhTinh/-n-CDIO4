@@ -1184,3 +1184,9 @@ export class Api<
       }),
   };
 }
+
+// Re-export services
+export { AuthService } from './auth.service'
+export { PostService } from './post.service'
+export { UserService } from './user.service'
+export { ProfileService } from './profile.service'

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { AuthService } from '@/lib/api/auth.service'
 import { PostService } from '@/lib/api/post.service'
+import { ProfileService } from '@/lib/api/profile.service'
 import SkeletonPost from '@/app/components/SkeletonPost'
 
 export default function HomePage() {
@@ -55,15 +56,12 @@ export default function HomePage() {
         // Chưa đăng nhập, chuyển về trang đăng nhập
         router.push('/dang-nhap')
       } else {
-        // Load current user ID from localStorage
-        const userDataStr = localStorage.getItem('user_data')
-        if (userDataStr) {
-          try {
-            const userData = JSON.parse(userDataStr)
-            setCurrentUser(userData)
-          } catch (e) {
-            console.error('Error parsing user data:', e)
-          }
+        // Load thông tin user từ API
+        try {
+          const userData = await ProfileService.getMyProfile()
+          setCurrentUser(userData)
+        } catch (error) {
+          console.error('❌ Không thể load thông tin user:', error)
         }
         
         setIsLoading(false)
@@ -74,18 +72,6 @@ export default function HomePage() {
     
     checkAuth()
   }, [router])
-
-  // Hiển thị loading khi đang kiểm tra authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Đang tải...</p>
-        </div>
-      </div>
-    )
-  }
 
   // Dữ liệu mẫu cho danh sách lĩnh vực
   const categories = [
@@ -501,6 +487,44 @@ export default function HomePage() {
     }
   ]
 
+  // Helper function để render avatar
+  const renderAvatar = (size: 'small' | 'medium' | 'large' = 'medium') => {
+    const sizeClasses = {
+      small: 'w-8 h-8 text-sm',
+      medium: 'w-10 h-10 text-base',
+      large: 'w-12 h-12 text-lg'
+    }
+    const className = `${sizeClasses[size]} rounded-full flex items-center justify-center`
+
+    if (currentUser?.avatar) {
+      return (
+        <img 
+          src={currentUser.avatar} 
+          alt="Avatar" 
+          className={`${className} object-cover`}
+        />
+      )
+    }
+    
+    return (
+      <div className={`${className} bg-blue-500 text-white font-semibold`}>
+        {currentUser?.fullName?.charAt(0).toUpperCase() || 'U'}
+      </div>
+    )
+  }
+
+  // Hiển thị loading khi đang kiểm tra authentication
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Đang tải...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Create Post Modal */}
@@ -524,11 +548,9 @@ export default function HomePage() {
             <div className="p-4">
               {/* User Info */}
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
-                  U
-                </div>
+                {renderAvatar('medium')}
                 <div>
-                  <div className="font-semibold text-gray-800">Người dùng</div>
+                  <div className="font-semibold text-gray-800">{currentUser?.fullName || currentUser?.displayName || 'Người dùng'}</div>
                   <div className="flex items-center space-x-1 text-sm text-gray-600">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
@@ -649,11 +671,9 @@ export default function HomePage() {
               href="/profile"
               className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-blue-50 text-blue-600 transition cursor-pointer"
             >
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
-                U
-              </div>
+              {renderAvatar('small')}
               <div className="flex-1">
-                <div className="font-medium text-sm">Người dùng</div>
+                <div className="font-medium text-sm">{currentUser?.fullName || currentUser?.displayName || 'Người dùng'}</div>
                 <div className="text-xs text-gray-500">Xem trang cá nhân</div>
               </div>
             </Link>
@@ -687,6 +707,13 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
               </svg>
               <span className="text-sm">Đã lưu</span>
+            </Link>
+
+            <Link href="/bai-dang-cua-toi" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-sm">Bài đăng của tôi</span>
             </Link>
 
             <Link href="/lich-su" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
@@ -865,9 +892,9 @@ export default function HomePage() {
               )}
             </Link>
 
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold cursor-pointer">
-              U
-            </div>
+            <Link href="/profile" className="cursor-pointer">
+              {renderAvatar('small')}
+            </Link>
           </div>
         </div>
 
@@ -877,9 +904,7 @@ export default function HomePage() {
             {/* Create Post Section */}
             <div className="bg-white rounded-lg shadow-sm mb-4 p-4">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
-                  U
-                </div>
+                {renderAvatar('medium')}
                 <input
                   type="text"
                   placeholder="Bạn cần tìm thợ gì?"
@@ -974,17 +999,45 @@ export default function HomePage() {
                 </button>
               </div>
             ) : (
-              posts.map(post => (
+              posts.map(post => {
+                // Kiểm tra xem bài viết có phải của currentUser không
+                // So sánh nhiều trường có thể có
+                const isMyPost = 
+                  post.customerId === currentUser?.id || 
+                  post.customer?.id === currentUser?.id ||
+                  post.userId === currentUser?.id ||
+                  post.authorId === currentUser?.id ||
+                  // So sánh theo tên nếu không có ID
+                  (post.customer?.fullName === currentUser?.fullName && currentUser?.fullName)
+                
+                const postAuthor = isMyPost ? currentUser : post.customer
+                
+                return (
                 <div key={post.id} className="bg-white rounded-lg shadow-sm mb-4 overflow-hidden">
                   {/* Post Header */}
                 <div className="p-4 border-b border-gray-100">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 bg-gradient-to-br ${post.avatarColor || post.customer?.avatarUrl || 'from-blue-400 to-blue-600'} rounded-full flex items-center justify-center text-white font-semibold`}>
-                        {post.avatar || (post.customer?.fullName ? post.customer.fullName.charAt(0).toUpperCase() : 'U')}
-                      </div>
+                      {/* Hiển thị avatar của currentUser nếu có */}
+                      {currentUser?.avatar && isMyPost ? (
+                        <img 
+                          src={currentUser.avatar} 
+                          alt="Avatar" 
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : postAuthor?.avatar ? (
+                        <img 
+                          src={postAuthor.avatar} 
+                          alt="Avatar" 
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className={`w-10 h-10 bg-gradient-to-br ${post.avatarColor || postAuthor?.avatarUrl || 'from-blue-400 to-blue-600'} rounded-full flex items-center justify-center text-white font-semibold`}>
+                          {post.avatar || (postAuthor?.fullName ? postAuthor.fullName.charAt(0).toUpperCase() : currentUser?.fullName?.charAt(0).toUpperCase() || 'U')}
+                        </div>
+                      )}
                       <div>
-                        <h3 className="font-semibold text-gray-800">{post.author || post.customer?.fullName || 'Người dùng'}</h3>
+                        <h3 className="font-semibold text-gray-800">{postAuthor?.fullName || post.author || currentUser?.fullName || 'Người dùng'}</h3>
                         <div className="flex items-center space-x-2 text-xs text-gray-500">
                           <span>{post.time || new Date(post.createdAt).toLocaleDateString('vi-VN')}</span>
                           <span>•</span>
@@ -1180,7 +1233,8 @@ export default function HomePage() {
                   </div>
                 )}
               </div>
-              ))
+              )
+              })
             )}
           </div>
         </div>

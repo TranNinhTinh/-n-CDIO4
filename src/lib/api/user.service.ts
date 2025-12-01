@@ -44,7 +44,7 @@ export class UserService {
       console.log('🔵 Get Current User Request')
 
       const response = await fetch(
-        `${API_CONFIG.BASE_URL}/api/v1/users/me`,
+        '/api/profile/me',
         {
           method: 'GET',
           headers: this.getHeaders(),
@@ -78,9 +78,9 @@ export class UserService {
       console.log('🔵 Update User Request:', data)
 
       const response = await fetch(
-        `${API_CONFIG.BASE_URL}/api/v1/users/me`,
+        '/api/profile/me',
         {
-          method: 'PUT',
+          method: 'PATCH',
           headers: this.getHeaders(),
           body: JSON.stringify(data),
         }
@@ -113,7 +113,7 @@ export class UserService {
       console.log('🔵 Change Password Request')
 
       const response = await fetch(
-        `${API_CONFIG.BASE_URL}/api/v1/users/change-password`,
+        `${API_CONFIG.BASE_URL}/users/change-password`,
         {
           method: 'POST',
           headers: this.getHeaders(),
