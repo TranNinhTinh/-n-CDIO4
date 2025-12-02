@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ThoTotLogo from '../components/ThoTotLogo'
@@ -16,6 +16,22 @@ export default function DangNhap() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Tự động điền thông tin đăng nhập đã lưu (không tự động submit)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const credentials = AuthService.getRememberedCredentials()
+      if (credentials) {
+        // Chỉ điền vào form, không tự động đăng nhập
+        setFormData({
+          identifier: credentials.identifier,
+          password: credentials.password,
+          rememberMe: true
+        })
+        console.log('✅ Đã tự động điền thông tin đăng nhập đã lưu')
+      }
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,7 +50,7 @@ export default function DangNhap() {
       }
 
       // Gọi API đăng nhập - Backend sẽ tự xử lý email hoặc phone
-      const response = await AuthService.login(loginData)
+      const response = await AuthService.login(loginData, formData.rememberMe)
       
       console.log('✅ Đăng nhập thành công:', response)
       
@@ -49,7 +65,7 @@ export default function DangNhap() {
       if (err instanceof Error) {
         setError(err.message)
       } else {
-        setError('Tài khoản hoặc mật khẩu không đúng. Vui lòng kiểm tra lại!')
+        setError('Email hoặc số điện thoại hoặc mật khẩu không đúng. Vui lòng kiểm tra lại!')
       }
     } finally {
       setLoading(false)

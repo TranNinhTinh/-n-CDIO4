@@ -58,6 +58,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Map role từ backend sang accountType cho frontend
+    let userData = data.data || data
+    if (userData.role) {
+      // Convert: customer → CUSTOMER, provider → WORKER
+      userData.accountType = userData.role === 'customer' ? 'CUSTOMER' : 'WORKER'
+      console.log(`✅ Mapped role '${userData.role}' to accountType '${userData.accountType}'`)
+    }
+
     return NextResponse.json(data, { status: 200 })
   } catch (error) {
     console.error('❌ Get Profile Error:', error)

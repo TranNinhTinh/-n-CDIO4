@@ -7,6 +7,17 @@ export const API_CONFIG = {
     REGISTER: '/auth/register',
     REFRESH: '/auth/refresh',
     LOGOUT: '/auth/logout',
+    // Chat endpoints
+    CHAT_CONVERSATIONS: '/chat/conversations',
+    CHAT_CONVERSATION_BY_ID: '/chat/conversations/:id',
+    CHAT_DELETE_CONVERSATION: '/chat/conversations/:id',
+    CHAT_CREATE_DIRECT: '/chat/conversations/direct',
+    CHAT_SEND_MESSAGE: '/chat/conversations/:id/messages',
+    CHAT_GET_MESSAGES: '/chat/conversations/:id/messages',
+    CHAT_MARK_AS_READ: '/chat/conversations/:id/read',
+    CHAT_UNREAD_COUNT: '/chat/unread-count',
+    CHAT_CLOSE_CONVERSATION: '/chat/conversations/:id/close',
+    CHAT_SEARCH: '/chat/search',
   },
   HEADERS: {
     'Content-Type': 'application/json',

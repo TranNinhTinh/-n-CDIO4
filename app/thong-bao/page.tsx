@@ -3,437 +3,843 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AuthService } from '@/lib/api/auth.service'
-import Image from 'next/image'
-import Link from 'next/link'
+import { notificationService, type Notification } from '@/lib/api/notification.service'
+import { socketService } from '@/lib/api/socket.service'
+import { quoteService, type Quote } from '@/lib/api/quote.service'
+import { ProfileService } from '@/lib/api/profile.service'
 
-interface Notification {
-  id: string
-  type: 'comment' | 'job' | 'message' | 'review' | 'system'
-  title: string
-  content: string
-  time: string
-  isRead: boolean
-  actionUrl?: string
-  userAvatar?: string
-}
-
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    type: 'comment',
-    title: 'Thợ Điện Minh đã bình luận bài viết của bạn',
-    content: 'Em có thể nhận việc này vào chiều nay ạ!',
-    time: '5 phút trước',
-    isRead: false,
-    actionUrl: '/posts/1',
-    userAvatar: '⚡'
-  },
-  {
-    id: '2',
-    type: 'job',
-    title: 'Có công việc phù hợp với bạn',
-    content: 'Cần thợ sửa điều hòa tại Quận 1 - Mức lương: 500,000đ',
-    time: '30 phút trước',
-    isRead: false,
-    actionUrl: '/posts/5'
-  },
-  {
-    id: '3',
-    type: 'message',
-    title: 'Tin nhắn mới từ Nguyễn Văn A',
-    content: 'Anh có thể qua sửa vào ngày mai được không ạ?',
-    time: '1 giờ trước',
-    isRead: false,
-    actionUrl: '/tin-nhan',
-    userAvatar: '👨'
-  },
-  {
-    id: '4',
-    type: 'review',
-    title: 'Lê Thị Hoa đã đánh giá bạn',
-    content: '⭐⭐⭐⭐⭐ Thợ làm việc rất tốt, nhiệt tình!',
-    time: '2 giờ trước',
-    isRead: true,
-    actionUrl: '/profile',
-    userAvatar: '👩'
-  },
-  {
-    id: '5',
-    type: 'job',
-    title: 'Bài đăng của bạn có người quan tâm',
-    content: '12 người đã xem bài đăng "Cần thợ sửa điện"',
-    time: '3 giờ trước',
-    isRead: true,
-    actionUrl: '/posts/1'
-  },
-  {
-    id: '6',
-    type: 'system',
-    title: 'Cập nhật mới từ Thợ Tốt',
-    content: 'Chúng tôi đã thêm tính năng lọc thợ theo khu vực!',
-    time: '5 giờ trước',
-    isRead: true
-  },
-  {
-    id: '7',
-    type: 'comment',
-    title: 'Điện Lạnh Hưng đã trả lời bình luận của bạn',
-    content: 'Em có thể qua ngay bây giờ ạ',
-    time: '1 ngày trước',
-    isRead: true,
-    actionUrl: '/posts/3',
-    userAvatar: '❄️'
-  },
-  {
-    id: '8',
-    type: 'job',
-    title: 'Công việc đã hoàn thành',
-    content: 'Khách hàng đã xác nhận hoàn thành công việc "Sửa điện nhà"',
-    time: '1 ngày trước',
-    isRead: true,
-    actionUrl: '/lich-su'
-  },
-  {
-    id: '9',
-    type: 'message',
-    title: 'Tin nhắn mới từ Mộc Tâm',
-    content: 'Tủ bếp đã xong rồi anh, anh qua kiểm tra nhé',
-    time: '2 ngày trước',
-    isRead: true,
-    actionUrl: '/tin-nhan',
-    userAvatar: '🪵'
-  },
-  {
-    id: '10',
-    type: 'review',
-    title: 'Trần Văn B đã đánh giá bạn',
-    content: '⭐⭐⭐⭐ Làm tốt, giá hợp lý',
-    time: '2 ngày trước',
-    isRead: true,
-    actionUrl: '/profile',
-    userAvatar: '🔧'
-  },
-  {
-    id: '11',
-    type: 'system',
-    title: 'Nhắc nhở: Cập nhật hồ sơ',
-    content: 'Hãy cập nhật kỹ năng và kinh nghiệm của bạn để được nhiều việc hơn',
-    time: '3 ngày trước',
-    isRead: true,
-    actionUrl: '/profile'
-  },
-  {
-    id: '12',
-    type: 'job',
-    title: 'Có 5 công việc mới phù hợp',
-    content: 'Kiểm tra ngay để không bỏ lỡ cơ hội!',
-    time: '3 ngày trước',
-    isRead: true,
-    actionUrl: '/home'
-  }
-]
-
-export default function NotificationsPage() {
+export default function ThongBaoPage() {
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [unreadCount, setUnreadCount] = useState(0)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  
+  // Modal state cho báo giá
+  const [showQuoteModal, setShowQuoteModal] = useState(false)
+  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null)
+  const [quoteLoading, setQuoteLoading] = useState(false)
+  const [quotes, setQuotes] = useState<Quote[]>([])
 
   useEffect(() => {
-    const checkAuth = () => {
-      if (!AuthService.isAuthenticated()) {
-        router.push('/dang-nhap')
-      } else {
-        setIsLoading(false)
-      }
+    const token = AuthService.getToken()
+    if (!token) {
+      router.push('/dang-nhap')
+      return
     }
-    checkAuth()
+
+    fetchNotifications()
+    fetchUnreadCount()
+
+    // Kết nối socket để nhận notifications real-time
+    socketService.connect()
+
+    // Lắng nghe notification mới
+    const unsubscribeNew = socketService.on('notification:new', (notification: Notification) => {
+      console.log('🔔 Received new notification via socket:', notification)
+      
+      // Thêm notification mới vào đầu danh sách
+      setNotifications(prev => [notification, ...prev])
+      
+      // Tăng unread count
+      setUnreadCount(prev => prev + 1)
+      
+      // Hiển thị browser notification (nếu được phép)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(notification.title, {
+          body: notification.message,
+          icon: '/logo.png'
+        })
+      }
+    })
+
+    // Lắng nghe khi notification được đánh dấu đã đọc
+    const unsubscribeRead = socketService.on('notification:read', (data: { notificationId: string }) => {
+      console.log('✓ Notification marked as read via socket:', data.notificationId)
+      
+      setNotifications(prev =>
+        prev.map(notif =>
+          notif.id === data.notificationId ? { ...notif, isRead: true } : notif
+        )
+      )
+    })
+
+    // Lắng nghe khi tất cả notification được đánh dấu đã đọc
+    const unsubscribeAllRead = socketService.on('notification:all_read', () => {
+      console.log('✓ All notifications marked as read via socket')
+      
+      setNotifications(prev => prev.map(notif => ({ ...notif, isRead: true })))
+      setUnreadCount(0)
+    })
+
+    // Yêu cầu quyền browser notification
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then(permission => {
+        console.log('Browser notification permission:', permission)
+      })
+    }
+
+    // Cleanup
+    return () => {
+      unsubscribeNew()
+      unsubscribeRead()
+      unsubscribeAllRead()
+      // Không disconnect socket ở đây vì có thể dùng ở trang khác
+    }
   }, [router])
 
-  const handleMarkAsRead = (id: string) => {
-    setNotifications(prev =>
-      prev.map(notif =>
-        notif.id === id ? { ...notif, isRead: true } : notif
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true)
+      const response = await notificationService.getNotifications({ limit: 50 })
+      console.log('📬 Notifications response:', response)
+      console.log('📬 Notifications data:', response.data)
+      console.log('📬 Notifications count:', response.data?.length)
+      
+      // Xử lý cả 2 trường hợp: response.data hoặc response là array trực tiếp
+      let notificationsArray: Notification[] = []
+      if (Array.isArray(response)) {
+        // Backend trả về array trực tiếp
+        notificationsArray = response
+      } else if (response.data && Array.isArray(response.data)) {
+        // Backend trả về { data: [...] }
+        notificationsArray = response.data
+      } else if (response.notifications && Array.isArray(response.notifications)) {
+        // Backend có thể dùng key "notifications"
+        notificationsArray = response.notifications
+      }
+      
+      console.log('📬 Final notifications array:', notificationsArray)
+      console.log('📬 Notifications length:', notificationsArray.length)
+      setNotifications(notificationsArray)
+    } catch (err: any) {
+      console.error('❌ Error fetching notifications:', err)
+      setError('Không thể tải thông báo')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchUnreadCount = async () => {
+    try {
+      const response = await notificationService.getUnreadCount()
+      setUnreadCount(response.unreadCount)
+    } catch (err) {
+      console.error('Error fetching unread count:', err)
+    }
+  }
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      await notificationService.markAsRead(notificationId)
+      setNotifications(prev =>
+        prev.map(notif =>
+          notif.id === notificationId ? { ...notif, isRead: true } : notif
+        )
       )
-    )
+      fetchUnreadCount()
+    } catch (err) {
+      console.error('Error marking as read:', err)
+    }
   }
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(prev =>
-      prev.map(notif => ({ ...notif, isRead: true }))
-    )
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notificationService.markAllAsRead()
+      setNotifications(prev => prev.map(notif => ({ ...notif, isRead: true })))
+      setUnreadCount(0)
+    } catch (err) {
+      console.error('Error marking all as read:', err)
+    }
   }
 
-  const handleDelete = (id: string) => {
-    setNotifications(prev => prev.filter(notif => notif.id !== id))
+  const handleDeleteNotification = async (notificationId: string) => {
+    try {
+      await notificationService.deleteNotification(notificationId)
+      setNotifications(prev => prev.filter(notif => notif.id !== notificationId))
+      fetchUnreadCount()
+    } catch (err) {
+      console.error('Error deleting notification:', err)
+    }
   }
+
+  const handleDeleteAllRead = async () => {
+    if (!confirm('Bạn có chắc muốn xóa tất cả thông báo đã đọc?')) return
+    
+    try {
+      await notificationService.deleteAllRead()
+      setNotifications(prev => prev.filter(notif => !notif.isRead))
+    } catch (err) {
+      console.error('Error deleting read notifications:', err)
+    }
+  }
+
+  // Xử lý click vào notification báo giá
+  const handleViewQuoteNotification = async (notification: Notification) => {
+    console.log('=== CLICK NOTIFICATION ===')
+    console.log('🔍 Type:', notification.type)
+    console.log('🔍 Title:', notification.title)
+    console.log('🔍 Message:', notification.message)
+    console.log('🔍 Data object:', notification.data)
+    console.log('🔍 Metadata object:', (notification as any).metadata)
+    console.log('🔍 Full notification:', JSON.stringify(notification, null, 2))
+    
+    // Đánh dấu đã đọc
+    if (!notification.isRead) {
+      await handleMarkAsRead(notification.id)
+    }
+    
+    // Backend gửi data trong field "metadata", KHÔNG phải "data"
+    const metadata = (notification as any).metadata || notification.data
+    
+    let postId = null
+    let quoteId = null
+    
+    if (metadata) {
+      console.log('🔍 Found metadata/data:', metadata)
+      
+      // Lấy postId và quoteId từ metadata
+      postId = metadata.postId || metadata.post_id || metadata.postID
+      quoteId = metadata.quoteId || metadata.quote_id || metadata.quoteID
+      
+      console.log('🔍 Extracted postId:', postId)
+      console.log('🔍 Extracted quoteId:', quoteId)
+    } else {
+      console.warn('⚠️ notification.metadata và notification.data đều null/undefined')
+    }
+    
+    if (!postId) {
+      console.error('❌ KHÔNG TÌM THẤY postId trong notification')
+      alert(
+        '⚠️ Thông báo thiếu thông tin bài đăng.\n\n' +
+        'Vui lòng vào "Bài đăng của tôi" để xem tất cả báo giá.'
+      )
+      router.push('/bai-dang-cua-toi')
+      return
+    }
+    
+    console.log('✅ PostId found:', postId)
+    
+    // Load tất cả quotes của post này
+    try {
+      setQuoteLoading(true)
+      console.log('📡 Loading quotes for post:', postId)
+      
+      const quotesData = await quoteService.getQuotesByPostId(postId)
+      console.log('📋 Quotes loaded:', quotesData)
+      console.log('📋 Number of quotes:', quotesData.length)
+      
+      if (quotesData.length === 0) {
+        alert('Không tìm thấy báo giá nào cho bài đăng này')
+        return
+      }
+      
+      // 🔥 GỌI API LẤY TÊN THẬT CỦA TỪNG PROVIDER
+      const enhancedQuotes = await Promise.all(
+        quotesData.map(async (quote) => {
+          let realProviderName = quote.providerName || null
+          let providerAvatar = quote.providerAvatar || null
+          let providerEmail = null
+          let providerPhone = null
+          
+          // Nếu có providerId, gọi API lấy profile
+          if (quote.providerId) {
+            try {
+              console.log('🔍 Fetching profile for provider:', quote.providerId)
+              const profile = await ProfileService.getUserProfile(quote.providerId)
+              console.log('✅ Provider profile:', profile)
+              
+              // Lấy tên theo thứ tự ưu tiên
+              realProviderName = profile.displayName || 
+                                profile.fullName || 
+                                profile.email?.split('@')[0] ||
+                                realProviderName
+              providerAvatar = profile.avatar || providerAvatar
+              providerEmail = profile.email
+              providerPhone = profile.phone
+              
+              console.log('✅ Real provider name:', realProviderName)
+            } catch (error) {
+              console.error('❌ Failed to fetch provider profile:', error)
+            }
+          }
+          
+          return {
+            ...quote,
+            providerName: realProviderName,
+            providerAvatar,
+            providerEmail,
+            providerPhone
+          }
+        })
+      )
+      
+      console.log('✅ Enhanced quotes with real names:', enhancedQuotes)
+      setQuotes(enhancedQuotes)
+      setShowQuoteModal(true)
+    } catch (error: any) {
+      console.error('❌ Error loading quotes:', error)
+      alert(error.message || 'Không thể tải thông tin báo giá')
+    } finally {
+      setQuoteLoading(false)
+    }
+  }
+  
+  // Chấp nhận báo giá và chuyển đến chat
+  const handleAcceptQuote = async (quoteId: string) => {
+    try {
+      setQuoteLoading(true)
+      console.log('📤 Accepting quote:', quoteId)
+      
+      const response = await quoteService.acceptQuoteForChat(quoteId)
+      console.log('✅ Quote accepted, response:', response)
+      
+      // Backend trả về conversationId sau khi tạo conversation
+      const conversationId = response.conversationId || response.data?.conversationId
+      
+      console.log('✅ ConversationId:', conversationId)
+      
+      // Đóng modal
+      setShowQuoteModal(false)
+      setSelectedQuote(null)
+      
+      // Thông báo thành công - Rõ ràng hơn
+      const successMessage = conversationId 
+        ? '✅ Đã chấp nhận báo giá!\n\n🔔 Hệ thống đã gửi thông báo cho thợ\n💬 Đang chuyển đến phần chat...'
+        : '✅ Đã chấp nhận báo giá!\n\n🔔 Thợ sẽ nhận được thông báo\n💬 Đang chuyển đến phần tin nhắn...'
+      
+      alert(successMessage)
+      
+      // Chuyển đến trang tin nhắn
+      // Nếu có conversationId, có thể thêm query param để mở conversation cụ thể
+      if (conversationId) {
+        console.log('💬 Redirecting to conversation:', conversationId)
+        router.push(`/tin-nhan?conversation=${conversationId}`)
+      } else {
+        console.log('💬 No conversationId, redirecting to tin-nhan page')
+        router.push('/tin-nhan')
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Error accepting quote:', error)
+      alert(error.message || 'Không thể chấp nhận báo giá')
+    } finally {
+      setQuoteLoading(false)
+    }
+  }
+  
+  // Từ chối báo giá
+  const handleRejectQuote = async (quoteId: string) => {
+    const reason = prompt('Lý do từ chối (tùy chọn):')
+    
+    try {
+      setQuoteLoading(true)
+      await quoteService.rejectQuote(quoteId, reason || undefined)
+      console.log('✅ Quote rejected')
+      
+      // Cập nhật quotes list
+      setQuotes(prev => prev.map(q => 
+        q.id === quoteId ? { ...q, status: 'REJECTED' } : q
+      ))
+      
+      alert('Đã từ chối báo giá')
+    } catch (error: any) {
+      console.error('❌ Error rejecting quote:', error)
+      alert(error.message || 'Không thể từ chối báo giá')
+    } finally {
+      setQuoteLoading(false)
+    }
+  }
+
+
+
+  const filteredNotifications = (notifications || []).filter(notif => {
+    if (filter === 'unread') return !notif.isRead
+    return true
+  })
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'comment':
-        return (
-          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-          </div>
-        )
-      case 'job':
-        return (
-          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-        )
+      case 'quote':
+        return '💰'
+      case 'order':
+        return '📦'
       case 'message':
-        return (
-          <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-        )
+        return '💬'
+      case 'post':
+        return '📝'
       case 'review':
-        return (
-          <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-            </svg>
-          </div>
-        )
+        return '⭐'
       case 'system':
-        return (
-          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-        )
+        return '🔔'
       default:
-        return null
+        return '📢'
     }
   }
 
-  const filteredNotifications = filter === 'unread' 
-    ? notifications.filter(n => !n.isRead)
-    : notifications
+  const formatTime = (timestamp: string) => {
+    const now = new Date()
+    const time = new Date(timestamp)
+    const diffInMs = now.getTime() - time.getTime()
+    const diffInMinutes = Math.floor(diffInMs / 60000)
+    const diffInHours = Math.floor(diffInMinutes / 60)
+    const diffInDays = Math.floor(diffInHours / 24)
 
-  const unreadCount = notifications.filter(n => !n.isRead).length
+    if (diffInMinutes < 1) return 'Vừa xong'
+    if (diffInMinutes < 60) return `${diffInMinutes} phút trước`
+    if (diffInHours < 24) return `${diffInHours} giờ trước`
+    if (diffInDays < 7) return `${diffInDays} ngày trước`
+    return time.toLocaleDateString('vi-VN')
+  }
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Đang tải thông báo...</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-3 border-b border-gray-200">
-          <div className="flex items-center justify-center">
-            <Image
-              src="/logo.png"
-              alt="Thợ Tốt"
-              width={120}
-              height={95}
-              className="object-contain"
-              style={{ maxWidth: '120px', height: 'auto' }}
-            />
-          </div>
-        </div>
-
-        <nav className="flex-1 overflow-y-auto p-2">
-          <div className="space-y-1">
-            <a href="/profile" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">U</div>
-              <div className="flex-1"><div className="font-medium text-sm">Người dùng</div></div>
-            </a>
-
-            <a href="/home" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-              <span className="text-sm">Trang chủ</span>
-            </a>
-
-            <a href="/tin-nhan" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
-              <span className="text-sm">Tin nhắn</span>
-            </a>
-
-            <a href="/thong-bao" className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-blue-50 text-blue-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-              <span className="text-sm">Thông báo</span>
-              {unreadCount > 0 && (
-                <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">{unreadCount}</span>
-              )}
-            </a>
-
-            <a href="/da-luu" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-              </svg>
-              <span className="text-sm">Đã lưu</span>
-            </a>
-
-            <a href="/lich-su" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="text-sm">Lịch sử yêu cầu</span>
-            </a>
-
-            <a href="/yeu-thich" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
-              <span className="text-sm">Thợ yêu thích</span>
-            </a>
-          </div>
-        </nav>
-
-        <div className="p-4 border-t border-gray-200">
-          <button
-            onClick={async () => {
-              await AuthService.logout()
-              router.push('/dang-nhap')
-            }}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white transition duration-200"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            <span className="font-medium">Đăng xuất</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 p-6">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-2xl font-bold text-gray-900">Thông báo</h1>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => router.back()}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-2xl font-bold">
+                Thông báo {unreadCount > 0 && `(${unreadCount})`}
+              </h1>
+            </div>
+            <div className="flex space-x-2">
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllAsRead}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  className="text-sm text-orange-600 hover:text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-50"
                 >
-                  Đánh dấu đã đọc tất cả
+                  Đánh dấu tất cả đã đọc
                 </button>
               )}
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex gap-4 border-b border-gray-200">
               <button
-                onClick={() => setFilter('all')}
-                className={`pb-3 px-2 font-medium transition ${
-                  filter === 'all'
-                    ? 'text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
+                onClick={handleDeleteAllRead}
+                className="text-sm text-red-600 hover:text-red-700 px-3 py-1 rounded-lg hover:bg-red-50"
               >
-                Tất cả ({notifications.length})
-              </button>
-              <button
-                onClick={() => setFilter('unread')}
-                className={`pb-3 px-2 font-medium transition ${
-                  filter === 'unread'
-                    ? 'text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Chưa đọc ({unreadCount})
+                Xóa đã đọc
               </button>
             </div>
           </div>
-        </div>
 
-        {/* Notifications List */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-4xl mx-auto p-6">
-            {filteredNotifications.length === 0 ? (
-              <div className="text-center py-12">
-                <svg className="w-20 h-20 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                <h3 className="text-lg font-semibold text-gray-700 mb-2">Không có thông báo</h3>
-                <p className="text-gray-500">Bạn đã xem hết thông báo</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredNotifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={`bg-white rounded-lg border transition hover:shadow-md ${
-                      notification.isRead ? 'border-gray-200' : 'border-blue-200 bg-blue-50'
-                    }`}
-                  >
-                    <div className="p-4">
-                      <div className="flex items-start gap-4">
-                        {notification.userAvatar ? (
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-lg flex-shrink-0">
-                            {notification.userAvatar}
-                          </div>
-                        ) : (
-                          getNotificationIcon(notification.type)
-                        )}
-                        
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <h3 className="font-semibold text-gray-900 text-sm">{notification.title}</h3>
-                            {!notification.isRead && (
-                              <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0 mt-1"></div>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mb-2">{notification.content}</p>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-500">{notification.time}</span>
-                            <div className="flex items-center gap-2">
-                              {!notification.isRead && (
-                                <button
-                                  onClick={() => handleMarkAsRead(notification.id)}
-                                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                                >
-                                  Đánh dấu đã đọc
-                                </button>
-                              )}
-                              {notification.actionUrl && (
-                                <Link
-                                  href={notification.actionUrl}
-                                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                                >
-                                  Xem chi tiết →
-                                </Link>
-                              )}
-                              <button
-                                onClick={() => handleDelete(notification.id)}
-                                className="text-xs text-red-600 hover:text-red-700 font-medium"
-                              >
-                                Xóa
-                              </button>
-                            </div>
-                          </div>
+          {/* Filter Tabs */}
+          <div className="flex space-x-4 border-b">
+            <button
+              onClick={() => setFilter('all')}
+              className={`pb-2 px-1 ${
+                filter === 'all'
+                  ? 'border-b-2 border-orange-500 text-orange-600 font-medium'
+                  : 'text-gray-600'
+              }`}
+            >
+              Tất cả ({notifications?.length || 0})
+            </button>
+            <button
+              onClick={() => setFilter('unread')}
+              className={`pb-2 px-1 ${
+                filter === 'unread'
+                  ? 'border-b-2 border-orange-500 text-orange-600 font-medium'
+                  : 'text-gray-600'
+              }`}
+            >
+              Chưa đọc ({unreadCount})
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications List */}
+      <div className="max-w-4xl mx-auto px-4 py-4">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+            {error}
+          </div>
+        )}
+
+        {(filteredNotifications?.length || 0) === 0 ? (
+          <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+            <div className="text-6xl mb-4">🔔</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {filter === 'unread' ? 'Không có thông báo chưa đọc' : 'Chưa có thông báo'}
+            </h3>
+            <p className="text-gray-500">
+              {filter === 'unread'
+                ? 'Bạn đã đọc tất cả thông báo'
+                : 'Các thông báo mới sẽ xuất hiện ở đây'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredNotifications.map((notification) => {
+              const isQuoteNotification = notification.type === 'new_quote_received'
+              
+              // Debug: Log notification data
+              console.log('🔍 Notification type:', notification.type)
+              console.log('🔍 Is quote notification:', isQuoteNotification)
+              console.log('🔍 Notification data:', notification.data)
+              
+              return (
+              <div
+                key={notification.id}
+                onClick={() => {
+                  console.log('👆 Clicked notification:', notification)
+                  if (isQuoteNotification) {
+                    handleViewQuoteNotification(notification)
+                  } else {
+                    console.log('⚠️ Not a quote notification, type:', notification.type)
+                  }
+                }}
+                className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow ${
+                  !notification.isRead ? 'border-l-4 border-orange-500' : ''
+                } ${isQuoteNotification ? 'cursor-pointer' : ''}`}
+              >
+                <div className="p-4">
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center text-2xl">
+                        {getNotificationIcon(notification.type)}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                            {notification.title}
+                          </h3>
+                          <p className="text-sm text-gray-600 mb-2">
+                            {notification.message}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {formatTime(notification.createdAt)}
+                          </p>
+                          
+                          {/* Hiển thị hint cho notification báo giá */}
+                          {notification.type === 'new_quote_received' && (
+                            <p className="mt-2 text-xs text-blue-600 font-medium">
+                              👆 Nhấn vào đây để xem báo giá và chấp nhận/từ chối
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-2 ml-4">
+                          {!notification.isRead && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleMarkAsRead(notification.id)
+                              }}
+                              className="p-1 text-orange-600 hover:bg-orange-50 rounded"
+                              title="Đánh dấu đã đọc"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteNotification(notification.id)
+                            }}
+                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                            title="Xóa thông báo"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     </div>
                   </div>
-                ))}
+                </div>
+              </div>
+            )})}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-10">
+        <div className="max-w-md mx-auto flex justify-around">
+          <button onClick={() => router.push('/home')} className="flex flex-col items-center p-2 text-gray-600">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span className="text-xs mt-1">Trang chủ</span>
+          </button>
+          <button onClick={() => router.push('/tin-nhan')} className="flex flex-col items-center p-2 text-gray-600">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span className="text-xs mt-1">Tin nhắn</span>
+          </button>
+          <button className="flex flex-col items-center p-2 text-orange-600">
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            <span className="text-xs mt-1">Thông báo</span>
+          </button>
+          <button onClick={() => router.push('/profile')} className="flex flex-col items-center p-2 text-gray-600">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span className="text-xs mt-1">Cá nhân</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Modal Báo Giá */}
+      {showQuoteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => {
+          setShowQuoteModal(false)
+          setSelectedQuote(null)
+          setQuotes([])
+        }}>
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header - Fixed */}
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div>
+                <h2 className="text-xl font-bold">💼 Thông tin báo giá</h2>
+                <p className="text-sm text-orange-100 mt-1">Xem và quyết định chấp nhận hay từ chối</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowQuoteModal(false)
+                  setSelectedQuote(null)
+                  setQuotes([])
+                }}
+                className="p-2 hover:bg-white/20 rounded-full transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content - Scrollable */}
+            <div className="p-6 overflow-y-auto flex-1">
+              {quoteLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Đang tải báo giá...</p>
+                </div>
+              ) : quotes.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-6xl mb-4">📭</div>
+                  <p className="text-gray-600 font-medium">Không tìm thấy báo giá</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-blue-800">
+                      <span className="font-bold">💡 Lưu ý:</span> Sau khi chấp nhận báo giá, bạn có thể trò chuyện với thợ trong mục "Tin nhắn"
+                    </p>
+                  </div>
+                  {quotes.map((quote) => {
+                    console.log('📋 Quote item:', quote)
+                    console.log('📋 Quote status:', quote.status)
+                    console.log('📋 Provider info from API:', quote.providerName, quote.providerEmail, quote.providerPhone)
+                    
+                    // Normalize status (backend trả về 'pending' chữ thường)
+                    const normalizedStatus = quote.status?.toUpperCase() || 'PENDING'
+                    
+                    // Tên thợ đã được load từ API getUserProfile
+                    const providerName = quote.providerName || 'Thợ (chưa có tên)'
+                    const providerAvatar = quote.providerAvatar || null
+                    const providerEmail = (quote as any).providerEmail || null
+                    const providerPhone = (quote as any).providerPhone || null
+                    
+                    console.log('✅ Final provider name:', providerName)
+                    console.log('✅ Provider contact:', providerEmail, providerPhone)
+                    
+                    return (
+                    <div
+                      key={quote.id}
+                      className={`border-2 rounded-lg p-4 ${
+                        normalizedStatus === 'PENDING' 
+                          ? 'border-blue-400 bg-blue-50' 
+                          : normalizedStatus === 'ACCEPTED' || normalizedStatus === 'IN_CHAT'
+                          ? 'border-green-400 bg-green-50'
+                          : 'border-gray-300 bg-gray-50'
+                      }`}
+                    >
+                      {/* Thông tin thợ */}
+                      <div className="flex items-center gap-3 mb-4 bg-white rounded-lg p-3 shadow-sm">
+                        {providerAvatar ? (
+                          <img
+                            src={providerAvatar}
+                            alt={providerName}
+                            className="w-14 h-14 rounded-full object-cover ring-2 ring-orange-200"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center ring-2 ring-orange-200">
+                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <h3 className="font-bold text-gray-900 text-lg">{providerName}</h3>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                              normalizedStatus === 'PENDING' ? 'bg-blue-100 text-blue-700' :
+                              normalizedStatus === 'ACCEPTED' || normalizedStatus === 'IN_CHAT' ? 'bg-green-100 text-green-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {normalizedStatus === 'PENDING' && '⏳ Đang chờ xác nhận'}
+                              {normalizedStatus === 'ACCEPTED' && '✅ Đã chấp nhận'}
+                              {normalizedStatus === 'IN_CHAT' && '💬 Đang trò chuyện'}
+                              {normalizedStatus === 'REJECTED' && '❌ Đã từ chối'}
+                              {!quote.status && '⏳ Chưa xác nhận'}
+                            </span>
+                          </div>
+                          
+                          {/* Thông tin liên hệ của thợ */}
+                          {(providerEmail || providerPhone) && (
+                            <div className="mt-2 pt-2 border-t border-orange-100 space-y-1">
+                              {providerEmail && (
+                                <p className="text-xs text-gray-600">
+                                  📧 {providerEmail}
+                                </p>
+                              )}
+                              {providerPhone && (
+                                <p className="text-xs text-gray-600">
+                                  📞 {providerPhone}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Chi tiết báo giá */}
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-sm text-gray-600">Giá:</p>
+                          <p className="text-2xl font-bold text-orange-600">
+                            {parseFloat(quote.price.toString()).toLocaleString('vi-VN')}đ
+                          </p>
+                        </div>
+
+                        {quote.estimatedDuration && (
+                          <div>
+                            <p className="text-sm text-gray-600">Thời gian ước tính:</p>
+                            <p className="text-lg font-semibold text-gray-900">
+                              {quote.estimatedDuration} phút
+                            </p>
+                          </div>
+                        )}
+
+                        <div>
+                          <p className="text-sm text-gray-600 mb-1">Mô tả:</p>
+                          <p className="text-gray-900">{quote.description}</p>
+                        </div>
+
+                        <div className="text-xs text-gray-500">
+                          Gửi lúc: {new Date(quote.createdAt).toLocaleString('vi-VN')}
+                        </div>
+                      </div>
+
+                      {/* Actions - Làm nổi bật hơn */}
+                      {(normalizedStatus === 'PENDING' || !quote.status || quote.status === 'pending') && (
+                        <div className="mt-6 pt-4 border-t-2 border-orange-200 bg-orange-50/50 rounded-b-lg p-4 -mx-4 -mb-4">
+                          <p className="text-sm text-gray-700 mb-3 font-bold text-center">
+                            👇 Bạn muốn làm gì với báo giá này? 👇
+                          </p>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleAcceptQuote(quote.id)
+                              }}
+                              disabled={quoteLoading}
+                              className="flex-1 bg-green-500 text-white px-6 py-4 rounded-lg font-bold text-lg hover:bg-green-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                            >
+                              <div className="flex items-center justify-center gap-2">
+                                <span className="text-2xl">✅</span>
+                                <span>Chấp nhận</span>
+                              </div>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRejectQuote(quote.id)
+                              }}
+                              disabled={quoteLoading}
+                              className="flex-1 bg-red-500 text-white px-6 py-4 rounded-lg font-bold text-lg hover:bg-red-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                            >
+                              <div className="flex items-center justify-center gap-2">
+                                <span className="text-2xl">❌</span>
+                                <span>Từ chối</span>
+                              </div>
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-500 text-center mt-3">
+                            Chấp nhận để mở chat với thợ, hoặc từ chối nếu không phù hợp
+                          </p>
+                        </div>
+                      )}
+
+                      {(normalizedStatus === 'ACCEPTED' || normalizedStatus === 'IN_CHAT') && (
+                        <div className="mt-4 bg-green-100 text-green-800 px-4 py-3 rounded-lg text-center font-medium">
+                          ✅ Đã chấp nhận báo giá này. Bạn có thể nhắn tin với thợ trong mục "Tin nhắn"
+                        </div>
+                      )}
+
+                      {normalizedStatus === 'REJECTED' && (
+                        <div className="mt-4 bg-red-100 text-red-800 px-4 py-3 rounded-lg text-center font-medium">
+                          ❌ Đã từ chối báo giá này
+                        </div>
+                      )}
+                    </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer - Fixed */}
+            {!quoteLoading && quotes.length > 0 && (
+              <div className="bg-gray-50 border-t px-6 py-4">
+                <p className="text-xs text-gray-500 text-center mb-2">
+                  Tổng số báo giá: <span className="font-bold">{quotes.length}</span>
+                </p>
+                <button
+                  onClick={() => {
+                    setShowQuoteModal(false)
+                    setSelectedQuote(null)
+                    setQuotes([])
+                  }}
+                  className="w-full bg-gray-300 text-gray-700 px-6 py-3 rounded-lg font-semibold hover:bg-gray-400 transition-colors"
+                >
+                  Đóng
+                </button>
               </div>
             )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

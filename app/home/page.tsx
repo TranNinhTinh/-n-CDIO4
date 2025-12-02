@@ -7,6 +7,10 @@ import Image from 'next/image'
 import { AuthService } from '@/lib/api/auth.service'
 import { PostService } from '@/lib/api/post.service'
 import { ProfileService } from '@/lib/api/profile.service'
+import { chatService } from '@/lib/api/chat.service'
+import { notificationService } from '@/lib/api/notification.service'
+import { socketService } from '@/lib/api/socket.service'
+import { chatSocketService } from '@/lib/api/chat-socket.service'
 import SkeletonPost from '@/app/components/SkeletonPost'
 
 export default function HomePage() {
@@ -22,11 +26,32 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showCategories, setShowCategories] = useState(true)
   const [showServices, setShowServices] = useState(true)
-  const [showNotifications, setShowNotifications] = useState(false)
   const [posts, setPosts] = useState<any[]>([])
   const [loadingPosts, setLoadingPosts] = useState(true)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+  
+  // Search states
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
+
+  // Load số thông báo và tin nhắn chưa đọc
+  const loadUnreadCounts = async () => {
+    try {
+      const [notificationData, messageData] = await Promise.all([
+        notificationService.getUnreadCount().catch(() => ({ count: 0 })),
+        chatService.getUnreadCount().catch(() => ({ unreadCount: 0 }))
+      ])
+      
+      setUnreadNotificationCount(notificationData.count || 0)
+      setUnreadMessageCount(messageData.unreadCount || 0)
+    } catch (error) {
+      console.error('❌ Lỗi load số chưa đọc:', error)
+    }
+  }
 
   // Load bài đăng từ API
   const loadPosts = async () => {
@@ -49,6 +74,50 @@ export default function HomePage() {
     }
   }
 
+  // Tìm kiếm profiles
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query)
+    
+    if (!query.trim()) {
+      setShowSearchResults(false)
+      setSearchResults([])
+      return
+    }
+
+    try {
+      setSearchLoading(true)
+      setShowSearchResults(true)
+      
+      // Tìm kiếm cả WORKER và CUSTOMER
+      const response = await ProfileService.searchProfiles({
+        q: query.trim(),
+        limit: 10,
+        sortBy: 'rating',
+        order: 'desc'
+      })
+      
+      setSearchResults(response.data || [])
+    } catch (error) {
+      console.error('❌ Lỗi tìm kiếm:', error)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  // Đóng kết quả tìm kiếm khi click bên ngoài
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('.search-container')) {
+        setShowSearchResults(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   // Kiểm tra authentication khi component mount
   useEffect(() => {
     const checkAuth = async () => {
@@ -65,8 +134,85 @@ export default function HomePage() {
         }
         
         setIsLoading(false)
-        // Load bài đăng
+        // Load bài đăng và số chưa đọc
         await loadPosts()
+        await loadUnreadCounts()
+        
+        // Kết nối socket để nhận cập nhật real-time cho badge numbers
+        socketService.connect()
+        chatSocketService.connect()
+        
+        // ===== NOTIFICATION SOCKET EVENTS =====
+        // Lắng nghe thông báo mới
+        const unsubscribeNew = socketService.on('notification:new', (notification) => {
+          console.log('🔔 [Home] Nhận thông báo mới:', notification)
+          
+          // Tăng số unread count
+          setUnreadNotificationCount(prev => prev + 1)
+          
+          // Hiển thị browser notification
+          if (Notification.permission === 'granted') {
+            new Notification('Thông báo mới', {
+              body: notification.message || 'Bạn có thông báo mới',
+              icon: '/logo.png'
+            })
+          }
+        })
+        
+        // Lắng nghe khi đánh dấu đã đọc
+        const unsubscribeRead = socketService.on('notification:read', ({ notificationId }) => {
+          console.log('✅ [Home] Thông báo đã đọc:', notificationId)
+          // Giảm unread count
+          setUnreadNotificationCount(prev => Math.max(0, prev - 1))
+        })
+        
+        // Lắng nghe khi đánh dấu tất cả đã đọc
+        const unsubscribeAllRead = socketService.on('notification:all_read', () => {
+          console.log('✅ [Home] Tất cả thông báo đã đọc')
+          setUnreadNotificationCount(0)
+        })
+        
+        // ===== CHAT SOCKET EVENTS =====
+        // Lắng nghe tin nhắn mới để cập nhật badge
+        const unsubscribeChatNewMessage = chatSocketService.on('new_message', (data: any) => {
+          console.log('💬 [Home] Tin nhắn mới:', data)
+          // Tăng message count
+          setUnreadMessageCount(prev => prev + 1)
+        })
+        
+        // Lắng nghe khi chat connected để lấy unread count
+        const unsubscribeChatConnected = chatSocketService.on('connected', (data: { userId: string; unreadCount: number }) => {
+          console.log('💬 [Home] Chat connected:', data)
+          setUnreadMessageCount(data.unreadCount)
+        })
+        
+        // Lắng nghe unread count update từ chat
+        const unsubscribeChatUnread = chatSocketService.on('unread_updated', (data: { conversationId: string; increment: number }) => {
+          console.log('💬 [Home] Chat unread updated:', data)
+          setUnreadMessageCount(prev => Math.max(0, prev + data.increment))
+        })
+        
+        // Yêu cầu quyền hiển thị browser notification
+        if (Notification.permission === 'default') {
+          Notification.requestPermission().then(permission => {
+            console.log('🔔 Browser notification permission:', permission)
+          })
+        }
+        
+        // Cleanup khi component unmount
+        return () => {
+          // Notification socket cleanup
+          unsubscribeNew()
+          unsubscribeRead()
+          unsubscribeAllRead()
+          socketService.disconnect()
+          
+          // Chat socket cleanup
+          unsubscribeChatNewMessage()
+          unsubscribeChatConnected()
+          unsubscribeChatUnread()
+          chatSocketService.disconnect()
+        }
       }
     }
     
@@ -88,88 +234,7 @@ export default function HomePage() {
     { id: 'nha', name: 'Vệ sinh nhà cửa', icon: '🧹', color: 'text-green-500' }
   ]
 
-  // Dữ liệu ảo cho thông báo
-  const notifications = [
-    {
-      id: 1,
-      type: 'comment',
-      title: 'Thợ Điện Minh đã bình luận',
-      content: 'Chào chị, e chuyên sửa điện dân dụng 2 năm...',
-      time: '5 phút trước',
-      isRead: false,
-      avatar: '💬'
-    },
-    {
-      id: 2,
-      type: 'accept',
-      title: 'Yêu cầu được chấp nhận',
-      content: 'Thợ Mộc Tuấn đã chấp nhận làm việc cho bạn',
-      time: '1 giờ trước',
-      isRead: false,
-      avatar: '✅'
-    },
-    {
-      id: 3,
-      type: 'complete',
-      title: 'Công việc hoàn thành',
-      content: 'Thợ Sen Phát đã hoàn thành công việc. Vui lòng đánh giá',
-      time: '3 giờ trước',
-      isRead: false,
-      avatar: '🎉'
-    },
-    {
-      id: 4,
-      type: 'message',
-      title: 'Tin nhắn mới từ Thợ Điều Hòa Nam',
-      content: 'Em có thể đến vào chiều nay được không ạ?',
-      time: '5 giờ trước',
-      isRead: true,
-      avatar: '💌'
-    },
-    {
-      id: 5,
-      type: 'system',
-      title: 'Khuyến mãi đặc biệt',
-      content: 'Giảm 20% cho lần đặt thợ đầu tiên trong tháng này',
-      time: '1 ngày trước',
-      isRead: true,
-      avatar: '🎁'
-    }
-  ]
-
-  // Dữ liệu ảo cho giỏ hàng
-  const cartItems = [
-    {
-      id: 1,
-      serviceName: 'Sửa chữa điện',
-      workerName: 'Thợ Điện Minh',
-      price: 250000,
-      date: '20/11/2025',
-      time: '14:00',
-      location: 'Hải Châu, Đà Nẵng',
-      status: 'pending'
-    },
-    {
-      id: 2,
-      serviceName: 'Sửa ống nước',
-      workerName: 'Thợ Sen Phát',
-      price: 180000,
-      date: '21/11/2025',
-      time: '09:00',
-      location: 'Thanh Khê, Đà Nẵng',
-      status: 'confirmed'
-    },
-    {
-      id: 3,
-      serviceName: 'Làm tủ bếp',
-      workerName: 'Thợ Mộc Tuấn',
-      price: 3500000,
-      date: '25/11/2025',
-      time: '08:00',
-      location: 'Sơn Trà, Đà Nẵng',
-      status: 'pending'
-    }
-  ]
+  // Không còn dữ liệu giả - chỉ dùng dữ liệu thật từ API
 
   // Handlers cho post actions
   const handleClosePost = async (postId: string) => {
@@ -201,6 +266,31 @@ export default function HomePage() {
     } catch (error: any) {
       console.error('Error deleting post:', error)
       alert(error.message || 'Không thể xóa bài đăng')
+    }
+  }
+
+  // Nhắn tin với người đăng bài
+  const handleSendMessageToAuthor = async (post: any) => {
+    const authorId = post.customerId || post.customer?.id
+    
+    if (!authorId) {
+      alert('Không thể xác định người đăng bài')
+      return
+    }
+
+    if (currentUser && authorId === currentUser.id) {
+      alert('Bạn không thể nhắn tin với chính mình')
+      return
+    }
+
+    try {
+      // Tạo hoặc mở cuộc trò chuyện
+      await chatService.createDirectConversation({ workerId: authorId })
+      // Chuyển đến trang tin nhắn
+      router.push('/tin-nhan')
+    } catch (error: any) {
+      console.error('Error creating conversation:', error)
+      alert(error.message || 'Không thể tạo cuộc trò chuyện')
     }
   }
 
@@ -691,7 +781,11 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
               <span className="text-sm">Tin nhắn</span>
-              <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">6</span>
+              {unreadMessageCount > 0 && (
+                <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {unreadMessageCount}
+                </span>
+              )}
             </Link>
 
             <Link href="/thong-bao" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
@@ -699,7 +793,11 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
               <span className="text-sm">Thông báo</span>
-              <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">12</span>
+              {unreadNotificationCount > 0 && (
+                <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {unreadNotificationCount}
+                </span>
+              )}
             </Link>
 
             <Link href="/da-luu" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
@@ -810,84 +908,131 @@ export default function HomePage() {
         {/* Top Bar */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-4 flex-1">
-            <div className="relative flex-1 max-w-2xl">
+            <div className="relative flex-1 max-w-2xl search-container">
               <input
                 type="text"
-                placeholder="Bạn cần tìm gì?"
+                placeholder="Tìm thợ, khách hàng..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
+                onFocus={() => searchQuery && setShowSearchResults(true)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               />
               <svg className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
+              
+              {/* Search Results Dropdown */}
+              {showSearchResults && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
+                  {searchLoading ? (
+                    <div className="p-4 text-center text-gray-500">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                      <p className="mt-2">Đang tìm kiếm...</p>
+                    </div>
+                  ) : searchResults.length > 0 ? (
+                    <div className="divide-y divide-gray-100">
+                      {searchResults.map((profile) => (
+                        <button
+                          key={profile.id}
+                          onClick={() => {
+                            router.push(`/profile?userId=${profile.id}`)
+                            setShowSearchResults(false)
+                            setSearchQuery('')
+                          }}
+                          className="w-full p-3 hover:bg-gray-50 flex items-center space-x-3 text-left transition"
+                        >
+                          <div className="flex-shrink-0">
+                            {profile.avatar ? (
+                              <img
+                                src={profile.avatar}
+                                alt={profile.displayName || profile.fullName}
+                                className="w-12 h-12 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                                {(profile.displayName || profile.fullName || 'U').charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium text-gray-900 truncate">
+                                {profile.displayName || profile.fullName || 'Người dùng'}
+                              </p>
+                              {profile.isVerified && (
+                                <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                profile.accountType === 'WORKER' 
+                                  ? 'bg-orange-100 text-orange-700' 
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {profile.accountType === 'WORKER' ? '🔧 Thợ' : '👤 Khách'}
+                              </span>
+                            </div>
+                            {profile.bio && (
+                              <p className="text-sm text-gray-500 truncate mt-0.5">
+                                {profile.bio}
+                              </p>
+                            )}
+                            <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
+                              {profile.rating && (
+                                <span className="flex items-center">
+                                  ⭐ {profile.rating.toFixed(1)}
+                                </span>
+                              )}
+                              {profile.completedJobs !== undefined && (
+                                <span>
+                                  ✅ {profile.completedJobs} công việc
+                                </span>
+                              )}
+                              {profile.location?.city && (
+                                <span>
+                                  📍 {profile.location.city}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-gray-500">
+                      <svg className="w-16 h-16 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <p className="font-medium">Không tìm thấy kết quả</p>
+                      <p className="text-sm mt-1">Thử tìm kiếm với từ khóa khác</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center space-x-4">
             {/* Thông báo */}
-            <div className="relative">
-              <button 
-                onClick={() => {
-                  setShowNotifications(!showNotifications)
-                }}
-                className="relative hover:bg-gray-100 p-2 rounded-full transition"
-              >
-                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                {notifications.filter(n => !n.isRead).length > 0 && (
-                  <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {notifications.filter(n => !n.isRead).length}
-                  </span>
-                )}
-              </button>
-              
-              {/* Dropdown thông báo */}
-              {showNotifications && (
-                <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                  <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold">Thông báo</h3>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {notifications.map(notif => (
-                      <div 
-                        key={notif.id} 
-                        className={`p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition ${
-                          !notif.isRead ? 'bg-blue-50' : ''
-                        }`}
-                      >
-                        <div className="flex items-start space-x-3">
-                          <div className="text-2xl">{notif.avatar}</div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900 text-sm">{notif.title}</p>
-                            <p className="text-gray-600 text-sm mt-1">{notif.content}</p>
-                            <p className="text-gray-400 text-xs mt-1">{notif.time}</p>
-                          </div>
-                          {!notif.isRead && (
-                            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="p-3 text-center border-t border-gray-200">
-                    <Link href="/thong-bao" className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                      Xem tất cả thông báo
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Giỏ hàng */}
-            <Link href="/gio-hang" className="relative hover:bg-gray-100 p-2 rounded-full transition">
+            <Link href="/thong-bao" className="relative hover:bg-gray-100 p-2 rounded-full transition">
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
-              {cartItems.length > 0 && (
+              {unreadNotificationCount > 0 && (
+                <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {unreadNotificationCount}
+                </span>
+              )}
+            </Link>
+
+            {/* Tin nhắn */}
+            <Link href="/tin-nhan" className="relative hover:bg-gray-100 p-2 rounded-full transition">
+              <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+              {unreadMessageCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {cartItems.length}
+                  {unreadMessageCount}
                 </span>
               )}
             </Link>
@@ -1191,12 +1336,22 @@ export default function HomePage() {
                     </svg>
                     <span className="text-gray-700 font-medium">Thích</span>
                   </button>
-                  <button className="flex items-center space-x-2 px-4 py-2 hover:bg-gray-50 rounded-lg transition">
-                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                    <span className="text-gray-700 font-medium">Chào giá</span>
-                  </button>
+                  
+                  {!isMyPost && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSendMessageToAuthor(post)
+                      }}
+                      className="flex items-center space-x-2 px-4 py-2 hover:bg-blue-50 rounded-lg transition"
+                    >
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      <span className="text-blue-600 font-medium">Nhắn tin</span>
+                    </button>
+                  )}
+
                   <button className="flex items-center space-x-2 px-4 py-2 hover:bg-gray-50 rounded-lg transition">
                     <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />

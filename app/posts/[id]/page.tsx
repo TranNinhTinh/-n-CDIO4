@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { AuthService } from '@/lib/api/auth.service'
 import { PostService } from '@/lib/api/post.service'
+import { chatService } from '@/lib/api/chat.service'
 import type { PostResponseDto } from '@/lib/api'
 import Image from 'next/image'
 import SkeletonPostDetail from '@/app/components/SkeletonPostDetail'
 import ThoTotLogo from '@/app/components/ThoTotLogo'
+import QuoteSection from '@/app/components/QuoteSection'
 
 export default function PostDetailPage() {
   const router = useRouter()
@@ -133,6 +135,27 @@ export default function PostDetailPage() {
     } catch (error: any) {
       console.error('Error deleting post:', error)
       alert(error.message || 'Không thể xóa bài đăng')
+    }
+  }
+
+  // Nhắn tin với người đăng bài
+  const handleSendMessage = async () => {
+    if (!post?.customerId) {
+      alert('Không thể xác định người đăng bài')
+      return
+    }
+
+    try {
+      // Tạo hoặc mở cuộc trò chuyện với người đăng bài
+      const conversation = await chatService.createDirectConversation({ 
+        workerId: post.customerId 
+      })
+      
+      // Chuyển đến trang tin nhắn
+      router.push('/tin-nhan')
+    } catch (error: any) {
+      console.error('Error creating conversation:', error)
+      alert(error.message || 'Không thể tạo cuộc trò chuyện')
     }
   }
 
@@ -338,6 +361,12 @@ export default function PostDetailPage() {
               )}
             </div>
 
+            {/* Quotes Section */}
+            <QuoteSection 
+              postId={postId} 
+              isPostOwner={isOwner}
+            />
+
             {/* Comments Section - Coming soon */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h3 className="text-xl font-semibold text-gray-900 mb-4">
@@ -385,25 +414,45 @@ export default function PostDetailPage() {
 
               {/* Action Buttons */}
               <div className="space-y-3">
-                <button
-                  onClick={handleApply}
-                  disabled={isApplying}
-                  className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-blue-400 transition-colors flex items-center justify-center gap-2"
-                >
-                  {isApplying ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      <span>Đang gửi...</span>
-                    </>
-                  ) : (
-                    <>
+                {!isOwner && (
+                  <>
+                    <button
+                      onClick={handleApply}
+                      disabled={isApplying}
+                      className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-blue-400 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isApplying ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <span>Đang gửi...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Ứng tuyển ngay</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={handleSendMessage}
+                      className="w-full py-3 bg-white text-blue-600 border-2 border-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+                    >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                       </svg>
-                      <span>Ứng tuyển ngay</span>
-                    </>
-                  )}
-                </button>
+                      <span>Nhắn tin với người đăng</span>
+                    </button>
+                  </>
+                )}
+
+                {isOwner && (
+                  <div className="text-center py-4 text-gray-500">
+                    Đây là bài đăng của bạn
+                  </div>
+                )}
 
                 <button className="w-full py-3 bg-white border-2 border-blue-600 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

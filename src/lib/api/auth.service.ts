@@ -28,8 +28,49 @@ export interface AuthResponse {
 // Auth Service sử dụng SDK
 export class AuthService {
 
+  // Lưu thông tin đăng nhập để tự động đăng nhập lần sau
+  static saveRememberMe(identifier: string, password: string) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('remember_me', 'true')
+      localStorage.setItem('saved_identifier', identifier)
+      // Mã hóa đơn giản (trong production nên dùng phương pháp bảo mật hơn)
+      localStorage.setItem('saved_password', btoa(password))
+    }
+  }
+
+  // Xóa thông tin ghi nhớ
+  static clearRememberMe() {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('remember_me')
+      localStorage.removeItem('saved_identifier')
+      localStorage.removeItem('saved_password')
+    }
+  }
+
+  // Lấy thông tin đã lưu
+  static getRememberedCredentials(): { identifier: string; password: string } | null {
+    if (typeof window !== 'undefined') {
+      const rememberMe = localStorage.getItem('remember_me')
+      if (rememberMe === 'true') {
+        const identifier = localStorage.getItem('saved_identifier')
+        const encodedPassword = localStorage.getItem('saved_password')
+        if (identifier && encodedPassword) {
+          try {
+            return {
+              identifier,
+              password: atob(encodedPassword)
+            }
+          } catch {
+            return null
+          }
+        }
+      }
+    }
+    return null
+  }
+
   // Đăng nhập
-  static async login(data: LoginRequest): Promise<AuthResponse> {
+  static async login(data: LoginRequest, rememberMe: boolean = false): Promise<AuthResponse> {
     try {
       console.log('🔵 Login Request:', { ...data, password: '***' })
 
@@ -48,13 +89,13 @@ export class AuthService {
       console.log('✅ Login Response Data:', responseData)
 
       if (!response.ok) {
-        const errorMessage = responseData.message || 'Đăng nhập thất bại'
+        const errorMessage = responseData.message || 'Email hoặc mật khẩu không đúng'
         console.error('❌ Login failed:', errorMessage)
         throw new Error(errorMessage)
       }
 
       if (!responseData.data) {
-        throw new Error('Không nhận được dữ liệu từ server')
+        throw new Error('Không nhận được dữ liệu từ máy chủ')
       }
 
       const result = responseData.data
@@ -63,6 +104,13 @@ export class AuthService {
       if (typeof window !== 'undefined') {
         localStorage.setItem(TOKEN_KEYS.ACCESS_TOKEN, result.accessToken)
         localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, result.refreshToken)
+        
+        // Lưu thông tin ghi nhớ nếu được chọn
+        if (rememberMe) {
+          this.saveRememberMe(data.identifier, data.password)
+        } else {
+          this.clearRememberMe()
+        }
       }
 
       console.log('✅ Login Success!')
@@ -75,7 +123,7 @@ export class AuthService {
     } catch (error: any) {
       console.error('❌ Login Error:', error)
       
-      let userMessage = 'Đăng nhập thất bại'
+      let userMessage = 'Email hoặc mật khẩu không đúng'
       
       if (error?.message) {
         userMessage = error.message
@@ -140,10 +188,11 @@ export class AuthService {
   // Làm mới token
   static async refreshToken(): Promise<AuthResponse> {
     try {
+      console.log('🔄 Đang làm mới token...')
       const response = await apiClient.auth.authControllerRefresh()
       
       if (!response.data || !response.data.data) {
-        throw new Error('Làm mới token thất bại')
+        throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!')
       }
 
       const result = response.data.data
@@ -152,6 +201,7 @@ export class AuthService {
       if (typeof window !== 'undefined') {
         localStorage.setItem(TOKEN_KEYS.ACCESS_TOKEN, result.accessToken)
         localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, result.refreshToken)
+        console.log('✅ Làm mới token thành công!')
       }
 
       return {
@@ -160,6 +210,9 @@ export class AuthService {
         user: result.user as any
       }
     } catch (error) {
+      console.error('❌ Lỗi khi làm mới token:', error)
+      // Nếu refresh token cũng fail, redirect về trang đăng nhập
+      this.handleTokenExpired()
       if (error instanceof Error) {
         throw error
       }
@@ -178,6 +231,9 @@ export class AuthService {
       if (typeof window !== 'undefined') {
         localStorage.removeItem(TOKEN_KEYS.ACCESS_TOKEN)
         localStorage.removeItem(TOKEN_KEYS.REFRESH_TOKEN)
+        // Không xóa Remember Me - để người dùng có thể đăng nhập lại dễ dàng
+        // Nếu muốn xóa hoàn toàn, uncomment dòng dưới:
+        // this.clearRememberMe()
       }
     }
   }
@@ -188,8 +244,28 @@ export class AuthService {
     return localStorage.getItem(TOKEN_KEYS.ACCESS_TOKEN)
   }
 
+  // Alias cho getAccessToken
+  static getToken(): string | null {
+    return this.getAccessToken()
+  }
+
   // Kiểm tra đã đăng nhập
   static isAuthenticated(): boolean {
     return !!this.getAccessToken()
+  }
+
+  // Xử lý token hết hạn - tự động redirect về trang đăng nhập
+  static handleTokenExpired(): void {
+    if (typeof window !== 'undefined') {
+      // Xóa token cũ
+      localStorage.removeItem(TOKEN_KEYS.ACCESS_TOKEN)
+      localStorage.removeItem(TOKEN_KEYS.REFRESH_TOKEN)
+      
+      // Hiển thị thông báo
+      alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!')
+      
+      // Chuyển hướng về trang đăng nhập
+      window.location.href = '/dang-nhap'
+    }
   }
 }
