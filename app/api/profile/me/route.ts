@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-variably-justa.ngrok-free.dev/api/v1'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_DOMAIN || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1'
 
 /**
  * GET /api/v1/profile/me
@@ -31,7 +31,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-v
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
-    
+
     if (!authHeader) {
       return NextResponse.json(
         { error: 'Unauthorized - Token không tồn tại' },
@@ -65,6 +65,22 @@ export async function GET(request: NextRequest) {
       userData.accountType = userData.role === 'customer' ? 'CUSTOMER' : 'WORKER'
       console.log(`✅ Mapped role '${userData.role}' to accountType '${userData.accountType}'`)
     }
+
+    // Map avatar field - backend might use different field names
+    if (!userData.avatar && userData.avatarUrl) {
+      userData.avatar = userData.avatarUrl
+      console.log('✅ Mapped avatarUrl to avatar')
+    }
+
+    console.log('🔵 Final userData before returning:', {
+      id: userData.id,
+      fullName: userData.fullName,
+      displayName: userData.displayName,
+      avatar: userData.avatar,
+      avatarUrl: userData.avatarUrl,
+      role: userData.role,
+      accountType: userData.accountType
+    })
 
     return NextResponse.json(data, { status: 200 })
   } catch (error) {
@@ -103,7 +119,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
-    
+
     if (!authHeader) {
       return NextResponse.json(
         { error: 'Unauthorized - Token không tồn tại' },
@@ -163,7 +179,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization')
-    
+
     if (!authHeader) {
       return NextResponse.json(
         { error: 'Unauthorized - Token không tồn tại' },

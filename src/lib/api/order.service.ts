@@ -35,10 +35,10 @@ export interface ConfirmOrderRequest {
 
 class OrderService {
   /**
-   * [Provider] Xác nhận làm → Tạo order
+   * [Provider] Xác nhận làm → Tạo order từ quote
    */
-  async confirmFromQuote(quoteId: string, data?: ConfirmOrderRequest): Promise<Order> {
-    const response = await apiClient.post(`/orders/confirm-from-quote/${quoteId}`, data)
+  async confirmFromQuote(quoteId: string): Promise<Order> {
+    const response = await apiClient.post(`/orders/confirm-from-quote/${quoteId}`)
     return response.data
   }
 
@@ -54,9 +54,9 @@ class OrderService {
    * [Customer] Khách hàng xác nhận hoàn thành (finalize)
    */
   async customerComplete(orderId: string, rating?: number, review?: string): Promise<Order> {
-    const response = await apiClient.post(`/orders/${orderId}/customer-complete`, { 
-      rating, 
-      review 
+    const response = await apiClient.post(`/orders/${orderId}/customer-complete`, {
+      rating,
+      review
     })
     return response.data
   }

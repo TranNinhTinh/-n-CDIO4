@@ -3,34 +3,47 @@ import { API_CONFIG } from './config'
 
 export interface Conversation {
   id: string
-  workerId: string
-  workerName: string
-  workerAvatar?: string
-  lastMessage?: string
-  lastMessageTime?: string
-  unreadCount: number
-  isClosed: boolean
+  customerId: string
+  providerId: string
+  quoteId?: string
+  type: string
+  isActive: boolean
+  isClosed?: boolean // ⚠️ NEW: Indicates if conversation was explicitly closed
+  lastMessageAt?: string
+  lastMessagePreview?: string
+  customerUnreadCount: number
+  providerUnreadCount: number
   createdAt: string
-  updatedAt: string
 }
 
 export interface Message {
   id: string
   conversationId: string
   senderId: string
-  senderName: string
-  senderAvatar?: string
-  content: string
+  type: string
+  content?: string
+  fileUrls?: string[]
   isRead: boolean
+  readAt?: string
   createdAt: string
 }
 
 export interface CreateDirectConversationRequest {
-  workerId: string
+  providerId: string
+}
+
+export enum MessageType {
+  TEXT = 'text',
+  IMAGE = 'image',
+  FILE = 'file',
+  SYSTEM = 'system'
 }
 
 export interface SendMessageRequest {
-  content: string
+  type: MessageType
+  content?: string
+  fileUrls?: string[]
+  fileNames?: string[]
 }
 
 export interface SearchMessagesParams {
@@ -52,7 +65,7 @@ async function apiCall<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = getAccessToken()
-  
+
   const headers: HeadersInit = {
     ...API_CONFIG.HEADERS,
     ...(token && { Authorization: `Bearer ${token}` }),
@@ -69,7 +82,20 @@ async function apiCall<T>(
     throw new Error(error.message || `HTTP ${response.status}`)
   }
 
-  return response.json()
+  const result = await response.json()
+
+  // Backend API returns { data: ... } or { success: true, data: ... }
+  // Extract the actual data from the response
+  if (result && typeof result === 'object') {
+    if ('data' in result) {
+      return result.data as T
+    }
+    if ('success' in result && 'data' in result) {
+      return result.data as T
+    }
+  }
+
+  return result as T
 }
 
 // Chat Service
@@ -145,7 +171,7 @@ export const chatService = {
       query: params.query,
       ...(params.limit && { limit: params.limit.toString() }),
     })
-    
+
     return apiCall<Message[]>(`/chat/search?${queryParams}`, {
       method: 'GET',
     })

@@ -15,7 +15,7 @@ export default function DangKy() {
     phone: '',
     password: '',
     confirmPassword: ''
-    
+
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -23,7 +23,7 @@ export default function DangKy() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    
+
     // Kiểm tra loại tài khoản
     if (!accountType) {
       setError('Vui lòng chọn loại tài khoản!')
@@ -47,7 +47,7 @@ export default function DangKy() {
       setError('Vui lòng nhập mật khẩu!')
       return
     }
-    
+
     // Kiểm tra mật khẩu khớp
     if (formData.password !== formData.confirmPassword) {
       setError('Mật khẩu xác nhận không khớp!')
@@ -74,16 +74,16 @@ export default function DangKy() {
         role: accountType === 'CUSTOMER' ? 'customer' : 'provider'
       }
 
-      console.log('📝 Sending register data:', { 
-        ...registerData, 
+      console.log('📝 Sending register data:', {
+        ...registerData,
         password: '***'
       })
 
       // Gọi API đăng ký
       const response = await AuthService.register(registerData)
-      
+
       console.log('✅ Đăng ký thành công:', response)
-      
+
       // Chuyển hướng đến trang đăng nhập sau khi đăng ký thành công
       alert('Đăng ký thành công! Vui lòng đăng nhập để tiếp tục.')
       router.push('/dang-nhap')
@@ -100,169 +100,116 @@ export default function DangKy() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
-        {/* Phần đầu trang */}
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <ThoTotLogo className="w-56 md:w-64" />
+    <div className="min-h-screen bg-gray-100 flex flex-col lg:flex-row">
+      {/* Phần trái - Logo và Slogan */}
+      <div className="hidden lg:flex lg:w-1/2 flex-col items-center justify-start pt-32 p-8">
+        <div className="text-center max-w-2xl">
+          <div className="mb-2">
+            <ThoTotLogo className="w-80" />
           </div>
-          <p className="text-gray-600 text-sm">Kết nối khách hàng và thợ chuyên nghiệp</p>
+          <p className="text-gray-800 text-xl font-bold leading-tight">
+            Thợ Tốt nơi cung cấp dịch vụ số 1 Việt Nam
+          </p>
         </div>
+      </div>
 
-        {/* Tiêu đề */}
-        <h2 className="text-xl font-bold text-center text-gray-800 mb-6">Đăng ký tài khoản</h2>
+      {/* Phần phải - Form Đăng ký */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-sm p-8 max-w-sm w-full">
+          {/* Tiêu đề */}
 
-        {/* Chọn loại tài khoản */}
-        <div className="mb-6">
-          <p className="text-sm font-medium text-gray-700 mb-3 text-center">Loại tài khoản</p>
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => setAccountType('CUSTOMER')}
-              className={`flex-1 p-4 rounded-lg border-2 transition duration-200 ${
-                accountType === 'CUSTOMER'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <div className="flex flex-col items-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${
-                  accountType === 'CUSTOMER' ? 'bg-blue-500' : 'bg-gray-300'
-                }`}>
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </div>
-                <span className={`text-sm font-medium ${
-                  accountType === 'CUSTOMER' ? 'text-blue-500' : 'text-gray-600'
-                }`}>
-                  Khách hàng
-                </span>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAccountType('WORKER')}
-              className={`flex-1 p-4 rounded-lg border-2 transition duration-200 ${
-                accountType === 'WORKER'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <div className="flex flex-col items-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${
-                  accountType === 'WORKER' ? 'bg-blue-500' : 'bg-gray-300'
-                }`}>
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <span className={`text-sm font-medium ${
-                  accountType === 'WORKER' ? 'text-blue-500' : 'text-gray-600'
-                }`}>
-                  Thợ
-                </span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* Biểu mẫu */}
-        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Hiển thị lỗi nếu có */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-4">
               {error}
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Họ và tên
-            </label>
+          {/* Chọn loại tài khoản */}
+          <div className="mb-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setAccountType('CUSTOMER')}
+              className={`flex-1 py-2 px-3 rounded text-sm font-semibold transition ${accountType === 'CUSTOMER'
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+            >
+              Khách hàng
+            </button>
+            <button
+              type="button"
+              onClick={() => setAccountType('WORKER')}
+              className={`flex-1 py-2 px-3 rounded text-sm font-semibold transition ${accountType === 'WORKER'
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+            >
+              Thợ
+            </button>
+          </div>
+
+          {/* Biểu mẫu */}
+          <form onSubmit={handleSubmit} className="space-y-3">
             <input
               type="text"
               value={formData.fullName}
               onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 border border-gray-300 rounded text-gray-700 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition text-sm"
               placeholder="Họ và tên"
               required
             />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email
-            </label>
             <input
               type="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 border border-gray-300 rounded text-gray-700 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition text-sm"
               placeholder="Email"
               required
             />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Số điện thoại
-            </label>
             <input
               type="tel"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 border border-gray-300 rounded text-gray-700 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition text-sm"
               placeholder="Số điện thoại"
               required
             />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mật khẩu
-            </label>
             <input
               type="password"
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 border border-gray-300 rounded text-gray-700 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition text-sm"
               placeholder="Mật khẩu"
               required
             />
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Xác nhận mật khẩu
-            </label>
             <input
               type="password"
               value={formData.confirmPassword}
               onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-3 border border-gray-300 rounded text-gray-700 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition text-sm"
               placeholder="Xác nhận mật khẩu"
               required
             />
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed text-base mt-4"
+            >
+              {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+            </button>
+          </form>
+
+          {/* Chân trang */}
+          <div className="text-center mt-6 text-xs text-gray-600">
+            <p className="mb-2">Đã có tài khoản? <Link href="/dang-nhap" className="text-sm font-semibold hover:opacity-80 transition" style={{ color: '#00B7B5' }}>Đăng nhập</Link></p>
+            <p className="text-gray-500">Bạn trao tôi niềm tin tôi trao bạn tất cả.</p>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 mt-6 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Đang đăng ký...' : 'Đăng ký'}
-          </button>
-        </form>
-
-        {/* Chân trang */}
-        <div className="mt-6 text-center text-sm text-gray-600">
-          Đã có tài khoản?{' '}
-          <Link href="/dang-nhap" className="text-blue-500 hover:text-blue-600 font-medium">
-            Đăng nhập
-          </Link>
         </div>
       </div>
     </div>
