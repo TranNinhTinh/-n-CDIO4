@@ -47,9 +47,9 @@ export default function CreatePostPage() {
       setLoadingPost(true)
       console.log('📖 Loading post for edit:', postId)
       const post = await PostService.getPostById(postId)
-      
+
       console.log('✅ Post loaded:', post)
-      
+
       // Populate form với dữ liệu từ post
       setFormData({
         title: post.title || '',
@@ -95,7 +95,7 @@ export default function CreatePostPage() {
       }
 
       let result
-      
+
       if (isEditMode && editId) {
         // Chế độ chỉnh sửa
         console.log('✏️ Updating post:', editId, postData)
@@ -109,11 +109,11 @@ export default function CreatePostPage() {
         console.log('✅ Post created successfully:', result)
         alert('Tạo bài đăng thành công!')
       }
-      
+
       router.push(`/posts/${result.id || editId}`)
     } catch (err: any) {
       console.error('❌ Lỗi:', err)
-      
+
       // Kiểm tra nếu là lỗi authentication
       if (err.message.includes('đăng nhập') || err.message.includes('phiên')) {
         setError(err.message)
@@ -146,8 +146,8 @@ export default function CreatePostPage() {
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <Link 
-            href={isEditMode ? "/bai-dang-cua-toi" : "/home"} 
+          <Link
+            href={isEditMode ? "/bai-dang-cua-toi" : "/home"}
             className="text-blue-500 hover:text-blue-600 flex items-center gap-2 mb-4"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,8 +159,8 @@ export default function CreatePostPage() {
             {isEditMode ? 'Chỉnh sửa bài đăng' : 'Tạo bài đăng mới'}
           </h1>
           <p className="text-gray-600 mt-2">
-            {isEditMode 
-              ? 'Cập nhật thông tin bài đăng của bạn' 
+            {isEditMode
+              ? 'Cập nhật thông tin bài đăng của bạn'
               : 'Mô tả công việc bạn cần để tìm thợ phù hợp'
             }
           </p>
@@ -248,8 +248,89 @@ export default function CreatePostPage() {
               />
             </div>
 
+            {/* Hình ảnh */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Hình ảnh
+              </label>
+              <div className="space-y-3">
+                {/* Input for adding new image URL */}
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="Nhập link hình ảnh (ví dụ: https://example.com/image.jpg)"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        const input = e.currentTarget
+                        const url = input.value.trim()
+                        if (url && !formData.imageUrls.includes(url)) {
+                          setFormData({
+                            ...formData,
+                            imageUrls: [...formData.imageUrls, url]
+                          })
+                          input.value = ''
+                        }
+                      }
+                    }}
+                    id="imageInput"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.getElementById('imageInput') as HTMLInputElement
+                      const url = input?.value.trim()
+                      if (url && !formData.imageUrls.includes(url)) {
+                        setFormData({
+                          ...formData,
+                          imageUrls: [...formData.imageUrls, url]
+                        })
+                        if (input) input.value = ''
+                      }
+                    }}
+                    className="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium"
+                  >
+                    Thêm
+                  </button>
+                </div>
+
+                {/* Display added images */}
+                {formData.imageUrls && formData.imageUrls.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {formData.imageUrls.map((url, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={url}
+                          alt={`Hình ảnh ${index + 1}`}
+                          className="w-full h-32 object-cover rounded-lg border border-gray-300"
+                          onError={(e) => {
+                            e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" fill="%23d1d5db" viewBox="0 0 24 24"%3E%3Cpath d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/%3E%3C/svg%3E'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              imageUrls: formData.imageUrls.filter((_, i) => i !== index)
+                            })
+                          }}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Buttons */}
-            <div className="flex gap-4 pt-4">
+            <div className="flex gap-4 pt-6 border-t border-gray-200">
               <button
                 type="button"
                 onClick={() => router.back()}
@@ -259,11 +340,11 @@ export default function CreatePostPage() {
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !formData.title.trim() || !formData.description.trim()}
                 className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                {loading 
-                  ? (isEditMode ? 'Đang cập nhật...' : 'Đang tạo...') 
+                {loading
+                  ? (isEditMode ? 'Đang cập nhật...' : 'Đang tạo...')
                   : (isEditMode ? 'Cập nhật bài đăng' : 'Tạo bài đăng')
                 }
               </button>

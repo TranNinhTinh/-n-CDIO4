@@ -2,603 +2,831 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { AuthService, UserService } from '@/lib/api/services'
-import { ProfileService } from '@/lib/api/profile.service'
-import type { Profile, UpdateProfileRequest, UpdateContactRequest } from '@/lib/api/profile.service'
-import SkeletonProfile from '@/app/components/SkeletonProfile'
+import Header from '@/app/components/Header'
+import { ProfileService, ProfileResponse, UpdateProfileDto, UpdateContactDto, ChangeDisplayNameDto } from '@/lib/api/profile-new.service'
+import { PostService } from '@/lib/api/post.service'
 
-// Danh sách 63 tỉnh/thành phố Việt Nam
-const VIETNAM_PROVINCES = [
-  'An Giang', 'Bà Rịa - Vũng Tàu', 'Bắc Giang', 'Bắc Kạn', 'Bạc Liêu',
-  'Bắc Ninh', 'Bến Tre', 'Bình Định', 'Bình Dương', 'Bình Phước',
-  'Bình Thuận', 'Cà Mau', 'Cần Thơ', 'Cao Bằng', 'Đà Nẵng',
-  'Đắk Lắk', 'Đắk Nông', 'Điện Biên', 'Đồng Nai', 'Đồng Tháp',
-  'Gia Lai', 'Hà Giang', 'Hà Nam', 'Hà Nội', 'Hà Tĩnh',
-  'Hải Dương', 'Hải Phòng', 'Hậu Giang', 'Hòa Bình', 'Hưng Yên',
-  'Khánh Hòa', 'Kiên Giang', 'Kon Tum', 'Lai Châu', 'Lâm Đồng',
-  'Lạng Sơn', 'Lào Cai', 'Long An', 'Nam Định', 'Nghệ An',
-  'Ninh Bình', 'Ninh Thuận', 'Phú Thọ', 'Phú Yên', 'Quảng Bình',
-  'Quảng Nam', 'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị', 'Sóc Trăng',
-  'Sơn La', 'Tây Ninh', 'Thái Bình', 'Thái Nguyên', 'Thanh Hóa',
-  'Thừa Thiên Huế', 'Tiền Giang', 'TP Hồ Chí Minh', 'Trà Vinh', 'Tuyên Quang',
-  'Vĩnh Long', 'Vĩnh Phúc', 'Yên Bái'
-]
-
-export default function ProfilePage() {
+export default function Profile() {
   const router = useRouter()
-  const [user, setUser] = useState<Profile | null>(null)
+  const [profile, setProfile] = useState<ProfileResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState<'info' | 'contact' | 'avatar'>('info')
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [activeTab, setActiveTab] = useState<'view' | 'edit' | 'contact' | 'display-name' | 'avatar' | 'my-posts'>('view')
+  const [isSaving, setIsSaving] = useState(false)
 
-  // Form data cho thông tin cá nhân
-  const [formData, setFormData] = useState({
-    fullName: '',
-    displayName: '',
-    bio: '',
-    phone: ''
-  })
+  // My Posts states
+  const [myPosts, setMyPosts] = useState<any[]>([])
+  const [postsLoading, setPostsLoading] = useState(false)
+  const [postsError, setPostsError] = useState('')
+  const [editingPostId, setEditingPostId] = useState<string | null>(null)
+  const [editPostForm, setEditPostForm] = useState<any>({})
+  const [postsLoaded, setPostsLoaded] = useState(false)
 
-  // Form data cho thông tin liên hệ
-  const [contactData, setContactData] = useState({
-    phone: '',
-    email: '',
-    address: '',
-    city: '',
-    district: '',
-    ward: ''
-  })
+  // Form states
+  const [editForm, setEditForm] = useState<UpdateProfileDto>({})
+  const [contactForm, setContactForm] = useState<UpdateContactDto>({})
+  const [displayNameForm, setDisplayNameForm] = useState({ displayName: '' })
+  const [avatarForm, setAvatarForm] = useState({ avatarUrl: '' })
 
-  // Kiểm tra authentication và load user data
+  // Load profile on mount
   useEffect(() => {
-    const loadUserData = async () => {
-      console.log('🔍 Starting to load user data...')
-      console.log('🔑 Token exists:', !!localStorage.getItem('access_token'))
-      console.log('🔑 Token value:', localStorage.getItem('access_token')?.substring(0, 50) + '...')
-      
-      if (!AuthService.isAuthenticated()) {
-        console.log('❌ Not authenticated, redirecting to login')
-        router.push('/dang-nhap')
-        return
-      }
+    loadProfile()
+  }, [])
 
-      console.log('✅ User is authenticated')
-
-      try {
-        // Thử gọi ProfileService trước, nếu lỗi thì dùng UserService
-        let userData: Profile
-        try {
-          console.log('📞 Calling ProfileService.getMyProfile()...')
-          userData = await ProfileService.getMyProfile()
-          console.log('✅ ProfileService success:', userData)
-        } catch (profileError) {
-          console.log('⚠️ ProfileService failed:', profileError)
-          console.log('📞 Trying UserService.getCurrentUser() fallback...')
-          // Fallback to UserService
-          const userFromUserService = await UserService.getCurrentUser()
-          console.log('✅ UserService success:', userFromUserService)
-          userData = {
-            ...userFromUserService,
-            displayName: userFromUserService.fullName,
-            bio: ''
-          } as Profile
-        }
-        
-        console.log('✅ Final User Data Loaded:', userData)
-        
-        setUser(userData)
-        setFormData({
-          fullName: userData.fullName || '',
-          displayName: userData.displayName || userData.fullName || '',
-          bio: userData.bio || '',
-          phone: userData.phone || ''
-        })
-        setContactData({
-          phone: userData.contactInfo?.phone || userData.phone || '',
-          email: userData.contactInfo?.email || userData.email || '',
-          address: userData.contactInfo?.address || '',
-          city: userData.contactInfo?.city || '',
-          district: userData.contactInfo?.district || '',
-          ward: userData.contactInfo?.ward || ''
-        })
-        
-        console.log('✅ Form Data Set:', {
-          fullName: userData.fullName,
-          displayName: userData.displayName,
-          email: userData.email,
-          phone: userData.phone
-        })
-      } catch (err) {
-        console.error('❌ Lỗi khi tải thông tin:', err)
-        setError('Không thể tải thông tin người dùng. Vui lòng đăng nhập lại.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadUserData()
-  }, [router])
-
-  // Cập nhật thông tin cá nhân
-  const handleUpdateInfo = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
-    setSaving(true)
-
+  const loadProfile = async () => {
     try {
-      // Thử ProfileService trước, nếu lỗi thì dùng UserService
-      try {
-        const updateData: UpdateProfileRequest = {
-          fullName: formData.fullName,
-          displayName: formData.displayName,
-          bio: formData.bio,
-          phone: formData.phone
-        }
-
-        const updatedUser = await ProfileService.updateProfile(updateData)
-        setUser(updatedUser)
-      } catch (profileError) {
-        console.log('⚠️ ProfileService update failed, using UserService fallback')
-        // Fallback to UserService
-        const userUpdateData = {
-          fullName: formData.fullName,
-          phone: formData.phone
-        }
-        const updatedUser = await UserService.updateUser(userUpdateData)
-        setUser({
-          ...updatedUser,
-          displayName: formData.displayName,
-          bio: formData.bio
-        } as Profile)
-      }
-      
-      setSuccess('Cập nhật thông tin thành công!')
-      setTimeout(() => setSuccess(''), 3000)
+      setLoading(true)
+      const data = await ProfileService.getMyProfile()
+      setProfile(data)
+      setEditForm({
+        fullName: data.fullName,
+        bio: data.bio,
+        address: data.address,
+        gender: data.gender,
+        birthday: data.birthday ? new Date(data.birthday) : undefined,
+      })
+      setContactForm({
+        email: data.email || '',
+        phone: data.phone || '',
+      })
+      setDisplayNameForm({ displayName: data.displayName || '' })
+      setAvatarForm({ avatarUrl: data.avatarUrl || '' })
+      setError('')
     } catch (err) {
-      console.error('❌ Update Error:', err)
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Không thể cập nhật thông tin')
-      }
+      setError(err instanceof Error ? err.message : 'Failed to load profile')
+      console.error('Error loading profile:', err)
     } finally {
-      setSaving(false)
+      setLoading(false)
     }
   }
 
-  // Cập nhật thông tin liên hệ
-  const handleUpdateContact = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
-    setSaving(true)
-
+  const handleUpdateProfile = async () => {
     try {
-      const updatedUser = await ProfileService.updateContact(contactData)
-      setUser(updatedUser)
-      setSuccess('Cập nhật thông tin liên hệ thành công!')
-      
-      setTimeout(() => setSuccess(''), 3000)
+      setIsSaving(true)
+      setError('')
+      const updated = await ProfileService.updateProfile(editForm)
+      setProfile(updated)
+      setActiveTab('view')
+      alert('✅ Profile updated successfully')
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Không thể cập nhật thông tin liên hệ')
-      }
+      setError(err instanceof Error ? err.message : 'Failed to update profile')
     } finally {
-      setSaving(false)
+      setIsSaving(false)
     }
   }
 
-  // Upload avatar
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setError('')
-    setSuccess('')
-    setUploadingAvatar(true)
-
+  const handleUpdateContact = async () => {
     try {
-      const updatedUser = await ProfileService.updateAvatarFile(file)
-      setUser(updatedUser)
-      setSuccess('Cập nhật avatar thành công!')
-      
-      setTimeout(() => setSuccess(''), 3000)
+      setIsSaving(true)
+      setError('')
+      const updated = await ProfileService.updateContact(contactForm)
+      setProfile(updated)
+      setActiveTab('view')
+      alert('✅ Contact information updated successfully')
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Không thể cập nhật avatar')
-      }
+      setError(err instanceof Error ? err.message : 'Failed to update contact')
     } finally {
-      setUploadingAvatar(false)
+      setIsSaving(false)
     }
   }
 
-  // Xóa tài khoản
+  const handleChangeDisplayName = async () => {
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await ProfileService.changeDisplayName(displayNameForm)
+      await loadProfile()
+      setActiveTab('view')
+      alert(`✅ ${response.message}\nDays until next change: ${response.daysUntilNextChange}`)
+    } catch (err: any) {
+      const message = err.message || 'Failed to change display name'
+      if (err.daysUntilCanChange) {
+        setError(`${message}\nDays remaining: ${err.daysUntilCanChange}`)
+      } else {
+        setError(message)
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleUpdateAvatar = async () => {
+    try {
+      setIsSaving(true)
+      setError('')
+      const updated = await ProfileService.updateAvatar(avatarForm)
+      setProfile(updated)
+      setActiveTab('view')
+      alert('✅ Avatar updated successfully')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update avatar')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const handleDeleteAccount = async () => {
-    if (!confirm('⚠️ Bạn có chắc chắn muốn xóa tài khoản? Hành động này không thể hoàn tác!')) {
+    if (!confirm('⚠️ Are you sure you want to delete your account? This can be recovered within 30 days.')) {
       return
     }
 
     try {
-      await ProfileService.deleteAccount()
-      setSuccess('Tài khoản đã được xóa!')
-      setTimeout(() => {
-        AuthService.logout()
-        router.push('/dang-nhap')
-      }, 2000)
+      setIsSaving(true)
+      setError('')
+      const response = await ProfileService.deleteAccount()
+      alert(response.message)
+      localStorage.removeItem('accessToken')
+      router.push('/dang-nhap')
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Không thể xóa tài khoản')
-      }
+      setError(err instanceof Error ? err.message : 'Failed to delete account')
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  // Loading state
-  if (loading) {
-    return <SkeletonProfile />
+  // Post APIs
+  const loadMyPosts = async () => {
+    try {
+      setPostsLoading(true)
+      setPostsError('')
+      const response = await PostService.getMyPosts({ limit: 50 })
+      setMyPosts(response.data || [])
+      setPostsLoaded(true)
+    } catch (err) {
+      setPostsError(err instanceof Error ? err.message : 'Failed to load posts')
+      console.error('Error loading posts:', err)
+    } finally {
+      setPostsLoading(false)
+    }
   }
 
-  // Debug: Log user state
-  console.log('🎨 Rendering Profile with user:', user)
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm('Bạn có chắc muốn xóa bài đăng này?')) {
+      return
+    }
+
+    try {
+      await PostService.deletePost(postId)
+      setMyPosts(myPosts.filter(p => p.id !== postId))
+      alert('✅ Bài đăng đã xóa')
+    } catch (err) {
+      setPostsError(err instanceof Error ? err.message : 'Failed to delete post')
+    }
+  }
+
+  const handleClosePost = async (postId: string) => {
+    try {
+      const updatedPost = await PostService.closePost(postId)
+      setMyPosts(myPosts.map(p => p.id === postId ? updatedPost : p))
+      alert('✅ Bài đăng đã đóng')
+    } catch (err) {
+      setPostsError(err instanceof Error ? err.message : 'Failed to close post')
+    }
+  }
+
+  const startEditPost = (post: any) => {
+    setEditingPostId(post.id)
+    setEditPostForm({
+      title: post.title,
+      description: post.description,
+      imageUrls: post.imageUrls || [],
+      location: post.location,
+      desiredTime: post.desiredTime,
+      budget: post.budget,
+    })
+  }
+
+  const cancelEditPost = () => {
+    setEditingPostId(null)
+    setEditPostForm({})
+  }
+
+  const handleUpdatePost = async (postId: string) => {
+    if (!editPostForm.title || !editPostForm.description) {
+      alert('Vui lòng điền tiêu đề và mô tả')
+      return
+    }
+
+    try {
+      const updatedPost = await PostService.updatePost(postId, editPostForm)
+      setMyPosts(myPosts.map(p => p.id === postId ? updatedPost : p))
+      setEditingPostId(null)
+      setEditPostForm({})
+      alert('✅ Bài đăng đã cập nhật')
+    } catch (err) {
+      setPostsError(err instanceof Error ? err.message : 'Failed to update post')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading profile...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="bg-white rounded-lg p-8 shadow-sm max-w-md w-full text-center">
+          <p className="text-red-600 mb-4">Failed to load profile</p>
+          <button
+            onClick={() => router.push('/home')}
+            className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4">
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      {/* Header */}
+      <Header />
 
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              {/* Avatar */}
-              <div className="relative">
-                {user?.avatar ? (
-                  <img 
-                    src={user.avatar} 
-                    alt="Avatar" 
-                    className="w-20 h-20 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-3xl font-bold">
-                    {(user?.fullName || user?.email || 'U').charAt(0).toUpperCase()}
-                  </div>
-                )}
-              </div>
-              
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">
-                  {user?.displayName || user?.fullName || user?.email?.split('@')[0] || 'Người dùng'}
-                </h1>
-                <p className="text-gray-600">{user?.email || 'No email'}</p>
-                {user?.phone && <p className="text-sm text-gray-500">📞 {user.phone}</p>}
-                {user?.bio && <p className="text-sm text-gray-500 mt-1">{user.bio}</p>}
-                <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-medium ${
-                  user?.accountType === 'WORKER' 
-                    ? 'bg-blue-100 text-blue-700' 
-                    : 'bg-green-100 text-green-700'
-                }`}>
-                  {user?.accountType === 'WORKER' ? '👷 Thợ' : '👤 Khách hàng'}
-                </span>
-              </div>
-            </div>
-
+      <div className="flex-1">
+        {/* Back Button */}
+        <div className="bg-white shadow">
+          <div className="max-w-4xl mx-auto px-4 py-4">
             <button
-              onClick={() => router.push('/home')}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+              onClick={() => router.back()}
+              className="text-blue-600 hover:text-blue-700"
             >
-              ← Quay lại
+              ← Back
             </button>
+            <h1 className="text-3xl font-bold text-gray-800">My Profile</h1>
+            <p className="text-gray-600 mt-2">Manage your account information and posts</p>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="border-b border-gray-200">
-            <div className="flex">
-              <button
-                onClick={() => setActiveTab('info')}
-                className={`flex-1 px-6 py-4 text-center font-medium transition ${
-                  activeTab === 'info'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                }`}
-              >
-                📋 Thông tin cá nhân
-              </button>
-              <button
-                onClick={() => setActiveTab('contact')}
-                className={`flex-1 px-6 py-4 text-center font-medium transition ${
-                  activeTab === 'contact'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                }`}
-              >
-                📞 Thông tin liên hệ
-              </button>
-              <button
-                onClick={() => setActiveTab('avatar')}
-                className={`flex-1 px-6 py-4 text-center font-medium transition ${
-                  activeTab === 'avatar'
-                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                }`}
-              >
-                🖼️ Avatar
-              </button>
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+              {error}
+            </div>
+          )}
+
+          {postsError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+              {postsError}
+            </div>
+          )}
+
+          {/* Navigation Tabs */}
+          <div className="bg-white rounded-lg shadow-sm mb-6">
+            <div className="flex border-b overflow-x-auto">
+              {[
+                { key: 'view', label: 'View Profile' },
+                { key: 'edit', label: 'Edit Profile' },
+                { key: 'contact', label: 'Contact Info' },
+                { key: 'display-name', label: 'Display Name' },
+                { key: 'avatar', label: 'Avatar' },
+                { key: 'my-posts', label: 'Bài đăng của tôi' },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => {
+                    setActiveTab(tab.key as any)
+                    if (tab.key === 'my-posts' && !postsLoaded) {
+                      loadMyPosts()
+                    }
+                  }}
+                  className={`px-4 py-3 text-sm font-medium transition whitespace-nowrap ${activeTab === tab.key
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="p-6">
-            {/* Thông báo */}
-            {error && (
-              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-                {success}
-              </div>
-            )}
+          {/* Tab Content */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            {/* View Profile Tab */}
+            {activeTab === 'view' && (
+              <div className="space-y-6">
+                {profile.avatarUrl && (
+                  <div className="flex justify-center">
+                    <img
+                      src={profile.avatarUrl}
+                      alt="Avatar"
+                      className="w-24 h-24 rounded-full object-cover border-4 border-blue-600"
+                    />
+                  </div>
+                )}
 
-            {/* Tab Thông tin cá nhân */}
-            {activeTab === 'info' && (
-              <form onSubmit={handleUpdateInfo} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Họ và tên
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Nhập họ và tên"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Tên hiển thị
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.displayName}
-                    onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Nhập tên hiển thị"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Tên này sẽ được hiển thị công khai</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Giới thiệu bản thân
-                  </label>
-                  <textarea
-                    value={formData.bio}
-                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Viết một vài dòng về bản thân..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Số điện thoại
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Nhập số điện thoại"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={user?.email || ''}
-                    disabled
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Email không thể thay đổi</p>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  {saving ? 'Đang lưu...' : 'Cập nhật thông tin'}
-                </button>
-              </form>
-            )}
-
-            {/* Tab Thông tin liên hệ */}
-            {activeTab === 'contact' && (
-              <form onSubmit={handleUpdateContact} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Số điện thoại liên hệ
-                  </label>
-                  <input
-                    type="tel"
-                    value={contactData.phone}
-                    onChange={(e) => setContactData({ ...contactData, phone: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Nhập số điện thoại"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email liên hệ
-                  </label>
-                  <input
-                    type="email"
-                    value={contactData.email}
-                    onChange={(e) => setContactData({ ...contactData, email: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Nhập email liên hệ"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Địa chỉ
-                  </label>
-                  <input
-                    type="text"
-                    value={contactData.address}
-                    onChange={(e) => setContactData({ ...contactData, address: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="Số nhà, tên đường..."
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tỉnh/Thành phố <span className="text-red-500">*</span>
-                    </label>
+                    <label className="text-sm font-semibold text-gray-600">Display Name</label>
+                    <p className="text-lg text-gray-800">{profile.displayName || 'Not set'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600">Full Name</label>
+                    <p className="text-lg text-gray-800">{profile.fullName || 'Not set'}</p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600">Email</label>
+                    <p className="text-lg text-gray-800">{profile.email || 'Not set'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600">Phone</label>
+                    <p className="text-lg text-gray-800">{profile.phone || 'Not set'}</p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600">Gender</label>
+                    <p className="text-lg text-gray-800">{profile.gender || 'Not set'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600">Birthday</label>
+                    <p className="text-lg text-gray-800">
+                      {profile.birthday ? new Date(profile.birthday).toLocaleDateString() : 'Not set'}
+                    </p>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-sm font-semibold text-gray-600">Address</label>
+                    <p className="text-lg text-gray-800">{profile.address || 'Not set'}</p>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-sm font-semibold text-gray-600">Bio</label>
+                    <p className="text-lg text-gray-800">{profile.bio || 'Not set'}</p>
+                  </div>
+                </div>
+
+                <div className="border-t pt-6">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <label className="font-semibold text-gray-600">Verified</label>
+                      <p>{profile.isVerified ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-600">Account Active</label>
+                      <p>{profile.isActive ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-600">Member Since</label>
+                      <p>{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-600">Last Updated</label>
+                      <p>{new Date(profile.updatedAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Display Name Change Info */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-blue-900 mb-2">Display Name Change Info</h3>
+                  <div className="text-sm text-blue-800 space-y-1">
+                    <p>Can change now: {profile.displayNameChangeInfo.canChange ? 'Yes' : 'No'}</p>
+                    <p>Changes made: {profile.displayNameChangeInfo.changeCount}</p>
+                    <p>Days until next change: {profile.displayNameChangeInfo.daysUntilNextChange}</p>
+                    {profile.displayNameChangeInfo.lastChanged && (
+                      <p>Last changed: {new Date(profile.displayNameChangeInfo.lastChanged).toLocaleDateString()}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Danger Zone */}
+                <div className="border-t pt-6">
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={isSaving}
+                    className="bg-red-600 text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-400"
+                  >
+                    Delete Account
+                  </button>
+                  <p className="text-xs text-gray-600 mt-2">Account can be recovered within 30 days</p>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Profile Tab */}
+            {activeTab === 'edit' && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  handleUpdateProfile()
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    value={editForm.fullName || ''}
+                    onChange={e => setEditForm({ ...editForm, fullName: e.target.value })}
+                    maxLength={255}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Max 255 characters</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Bio</label>
+                  <textarea
+                    value={editForm.bio || ''}
+                    onChange={e => setEditForm({ ...editForm, bio: e.target.value })}
+                    maxLength={500}
+                    rows={4}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Max 500 characters</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <input
+                    type="text"
+                    value={editForm.address || ''}
+                    onChange={e => setEditForm({ ...editForm, address: e.target.value })}
+                    maxLength={255}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Max 255 characters</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
                     <select
-                      value={contactData.city}
-                      onChange={(e) => setContactData({ ...contactData, city: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+                      value={editForm.gender || ''}
+                      onChange={e => setEditForm({ ...editForm, gender: e.target.value || undefined })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                     >
-                      <option value="">-- Chọn tỉnh/thành phố --</option>
-                      {VIETNAM_PROVINCES.map((province) => (
-                        <option key={province} value={province}>
-                          {province}
-                        </option>
-                      ))}
+                      <option value="">Not set</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Quận/Huyện
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Birthday</label>
                     <input
-                      type="text"
-                      value={contactData.district}
-                      onChange={(e) => setContactData({ ...contactData, district: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                      placeholder="Nhập quận/huyện"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Phường/Xã
-                    </label>
-                    <input
-                      type="text"
-                      value={contactData.ward}
-                      onChange={(e) => setContactData({ ...contactData, ward: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                      placeholder="Nhập phường/xã"
+                      type="date"
+                      value={
+                        editForm.birthday
+                          ? new Date(editForm.birthday).toISOString().split('T')[0]
+                          : ''
+                      }
+                      onChange={e => setEditForm({ ...editForm, birthday: e.target.value ? new Date(e.target.value) : undefined })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={saving}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={isSaving}
+                  className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                 >
-                  {saving ? 'Đang lưu...' : 'Cập nhật thông tin liên hệ'}
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </form>
             )}
 
-            {/* Tab Avatar */}
-            {activeTab === 'avatar' && (
-              <div className="space-y-6">
-                <div className="text-center">
-                  <div className="inline-block relative">
-                    {user?.avatar ? (
-                      <img 
-                        src={user.avatar} 
-                        alt="Avatar" 
-                        className="w-40 h-40 rounded-full object-cover mx-auto"
-                      />
-                    ) : (
-                      <div className="w-40 h-40 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-6xl font-bold mx-auto">
-                        {user?.fullName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+            {/* Contact Info Tab */}
+            {activeTab === 'contact' && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  handleUpdateContact()
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={contactForm.email || ''}
+                    onChange={e => setContactForm({ ...contactForm, email: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                  <input
+                    type="tel"
+                    value={contactForm.phone || ''}
+                    onChange={e => setContactForm({ ...contactForm, phone: e.target.value })}
+                    placeholder="0901234567"
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Vietnam format: 10-11 digits starting with 0 or +84</p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {isSaving ? 'Saving...' : 'Update Contact Info'}
+                </button>
+              </form>
+            )}
+
+            {/* Display Name Tab */}
+            {activeTab === 'display-name' && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  handleChangeDisplayName()
+                }}
+                className="space-y-4"
+              >
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Restriction:</strong> You can only change your display name once every 30 days.
+                    {!profile.displayNameChangeInfo.canChange && (
+                      <div className="mt-2">
+                        Days remaining: <strong>{profile.displayNameChangeInfo.daysUntilNextChange}</strong>
                       </div>
                     )}
-                  </div>
-                  <p className="text-sm text-gray-500 mt-4">
-                    Chọn ảnh để cập nhật avatar của bạn
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Tải ảnh lên
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">New Display Name</label>
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarUpload}
-                    disabled={uploadingAvatar}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+                    type="text"
+                    value={displayNameForm.displayName}
+                    onChange={e => setDisplayNameForm({ displayName: e.target.value })}
+                    minLength={3}
+                    maxLength={100}
+                    placeholder="3-100 characters"
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                    disabled={!profile.displayNameChangeInfo.canChange}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Chấp nhận: JPG, PNG, GIF. Tối đa 5MB
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Letters, numbers, spaces only. 3-100 characters.</p>
                 </div>
 
-                {uploadingAvatar && (
-                  <div className="text-center text-blue-600">
-                    Đang tải ảnh lên...
+                <button
+                  type="submit"
+                  disabled={isSaving || !profile.displayNameChangeInfo.canChange}
+                  className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {isSaving ? 'Changing...' : 'Change Display Name'}
+                </button>
+              </form>
+            )}
+
+            {/* Avatar Tab */}
+            {activeTab === 'avatar' && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  handleUpdateAvatar()
+                }}
+                className="space-y-4"
+              >
+                {avatarForm.avatarUrl && (
+                  <div className="flex justify-center mb-4">
+                    <img
+                      src={avatarForm.avatarUrl}
+                      alt="Avatar Preview"
+                      className="w-32 h-32 rounded-full object-cover border-4 border-blue-600"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Avatar URL</label>
+                  <input
+                    type="url"
+                    value={avatarForm.avatarUrl}
+                    onChange={e => setAvatarForm({ avatarUrl: e.target.value })}
+                    placeholder="https://example.com/avatar.jpg"
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Must be a valid URL. Max 500 characters.</p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+                >
+                  {isSaving ? 'Uploading...' : 'Update Avatar'}
+                </button>
+              </form>
+            )}
+
+            {/* My Posts Tab */}
+            {activeTab === 'my-posts' && (
+              <div className="space-y-4">
+                {!postsLoaded && (
+                  <button
+                    onClick={loadMyPosts}
+                    disabled={postsLoading}
+                    className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+                  >
+                    {postsLoading ? 'Loading...' : 'Load My Posts'}
+                  </button>
+                )}
+
+                {postsLoading && (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-gray-600">Loading posts...</p>
+                  </div>
+                )}
+
+                {postsLoaded && myPosts.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-gray-600 mb-4">You haven't created any posts yet</p>
+                    <button
+                      onClick={() => router.push('/posts/create')}
+                      className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
+                    >
+                      + Create New Post
+                    </button>
+                  </div>
+                )}
+
+                {myPosts.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold">My Posts ({myPosts.length})</h3>
+                      <button
+                        onClick={() => router.push('/posts/create')}
+                        className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                      >
+                        + New Post
+                      </button>
+                    </div>
+
+                    {myPosts.map(post => (
+                      <div key={post.id} className="border rounded-lg bg-white hover:shadow-md transition">
+                        {editingPostId === post.id ? (
+                          // Edit Mode
+                          <div className="p-6 space-y-4">
+                            <h4 className="text-lg font-semibold">Edit Post</h4>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                              <input
+                                type="text"
+                                value={editPostForm.title || ''}
+                                onChange={e => setEditPostForm({ ...editPostForm, title: e.target.value })}
+                                maxLength={255}
+                                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                              <textarea
+                                value={editPostForm.description || ''}
+                                onChange={e => setEditPostForm({ ...editPostForm, description: e.target.value })}
+                                rows={3}
+                                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                                <input
+                                  type="text"
+                                  value={editPostForm.location || ''}
+                                  onChange={e => setEditPostForm({ ...editPostForm, location: e.target.value })}
+                                  maxLength={255}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Budget (VND)</label>
+                                <input
+                                  type="number"
+                                  value={editPostForm.budget || ''}
+                                  onChange={e => setEditPostForm({ ...editPostForm, budget: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Desired Time</label>
+                              <input
+                                type="datetime-local"
+                                value={editPostForm.desiredTime ? new Date(editPostForm.desiredTime).toISOString().slice(0, 16) : ''}
+                                onChange={e => setEditPostForm({ ...editPostForm, desiredTime: e.target.value ? new Date(e.target.value) : undefined })}
+                                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              />
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleUpdatePost(post.id)}
+                                className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+                              >
+                                Save Changes
+                              </button>
+                              <button
+                                onClick={cancelEditPost}
+                                className="flex-1 bg-gray-400 text-white py-2 rounded hover:bg-gray-500"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          // View Mode
+                          <div className="p-6">
+                            <div className="flex justify-between items-start mb-3">
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-lg text-gray-800">{post.title}</h4>
+                                <p className="text-gray-600 text-sm mt-1">{post.description?.substring(0, 100)}...</p>
+                              </div>
+                              <span
+                                className={`px-3 py-1 rounded text-sm font-medium whitespace-nowrap ml-2 ${post.status === 'open'
+                                  ? 'bg-green-100 text-green-800'
+                                  : post.status === 'closed'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                  }`}
+                              >
+                                {post.status === 'open' ? '✅ Open' : post.status === 'closed' ? '❌ Closed' : post.status}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 text-sm text-gray-600 mb-4">
+                              {post.location && <div>Địa điểm: {post.location}</div>}
+                              {post.budget && (
+                                <div className="flex items-center gap-1">
+                                  <svg className="w-4 h-4 text-amber-600" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" />
+                                  </svg>
+                                  {post.budget.toLocaleString('vi-VN')} VND
+                                </div>
+                              )}
+                              <div>Ngày: {new Date(post.createdAt).toLocaleDateString('vi-VN')}</div>
+                              {post.desiredTime && <div>Tg: {new Date(post.desiredTime).toLocaleDateString('vi-VN')}</div>}
+                            </div>
+
+                            {post.imageUrls && post.imageUrls.length > 0 && (
+                              <div className="mb-4 flex gap-2 overflow-x-auto">
+                                {post.imageUrls.map((url: string, idx: number) => (
+                                  <img
+                                    key={idx}
+                                    src={url}
+                                    alt={`Post image ${idx + 1}`}
+                                    className="h-16 w-16 object-cover rounded"
+                                  />
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="flex gap-2 flex-wrap">
+                              <button
+                                onClick={() => router.push(`/posts/${post.id}`)}
+                                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm"
+                              >
+                                View
+                              </button>
+                              <button
+                                onClick={() => startEditPost(post)}
+                                className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 text-sm"
+                              >
+                                Edit
+                              </button>
+                              {post.status === 'open' && (
+                                <button
+                                  onClick={() => handleClosePost(post.id)}
+                                  className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 text-sm"
+                                >
+                                  Close
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeletePost(post.id)}
+                                className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Các hành động khác */}
-        <div className="mt-6 space-y-4">
-          <div className="bg-white rounded-lg shadow-md p-4 flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-gray-800">Xóa tài khoản</h3>
-              <p className="text-sm text-gray-600">Xóa vĩnh viễn tài khoản của bạn</p>
-            </div>
-            <button
-              onClick={handleDeleteAccount}
-              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded-lg transition"
-            >
-              Xóa tài khoản
-            </button>
-          </div>
-
-          <div className="text-center">
-            <button
-              onClick={async () => {
-                await AuthService.logout()
-                router.push('/dang-nhap')
-              }}
-              className="text-red-600 hover:text-red-700 font-medium"
-            >
-              🚪 Đăng xuất
-            </button>
           </div>
         </div>
       </div>

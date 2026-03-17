@@ -2,7 +2,14 @@
 import { io, Socket } from 'socket.io-client'
 import { AuthService } from './auth.service'
 
-const SOCKET_URL = 'https://postmaxillary-variably-justa.ngrok-free.dev'
+// Lấy SOCKET_URL từ environment variable
+const getSocketUrl = () => {
+  const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN || 'http://localhost:3000/api/v1'
+  // Loại bỏ /api/v1 để lấy domain gốc
+  return apiDomain.replace('/api/v1', '')
+}
+
+const SOCKET_URL = getSocketUrl()
 
 class SocketService {
   private socket: Socket | null = null
@@ -23,7 +30,9 @@ class SocketService {
       return
     }
 
-    console.log('🔌 Connecting to socket:', `${SOCKET_URL}/notifications`)
+    console.log('🔌 Attempting to connect to socket...')
+    console.log('   URL:', `${SOCKET_URL}/notifications`)
+    console.log('   Token:', token.substring(0, 20) + '...')
 
     this.socket = io(`${SOCKET_URL}/notifications`, {
       auth: {
@@ -38,7 +47,7 @@ class SocketService {
 
     // Connection events
     this.socket.on('connect', () => {
-      console.log('✅ Socket connected:', this.socket?.id)
+      console.log('✅ Socket connected! ID:', this.socket?.id)
     })
 
     this.socket.on('connected', (data: { userId: string }) => {
@@ -46,7 +55,7 @@ class SocketService {
     })
 
     this.socket.on('disconnect', (reason) => {
-      console.log('❌ Socket disconnected:', reason)
+      console.log('❌ Socket disconnected. Reason:', reason)
     })
 
     this.socket.on('connect_error', (error) => {
@@ -55,17 +64,17 @@ class SocketService {
 
     // Notification events
     this.socket.on('notification:new', (notification) => {
-      console.log('🔔 New notification received:', notification)
+      console.log('🔔 New notification received via socket:', notification)
       this.emit('notification:new', notification)
     })
 
     this.socket.on('notification:read', (data) => {
-      console.log('✓ Notification marked as read:', data.notificationId)
+      console.log('✓ Notification marked as read via socket:', data.notificationId)
       this.emit('notification:read', data)
     })
 
     this.socket.on('notification:all_read', () => {
-      console.log('✓ All notifications marked as read')
+      console.log('✓ All notifications marked as read via socket')
       this.emit('notification:all_read', {})
     })
   }

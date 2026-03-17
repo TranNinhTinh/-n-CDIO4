@@ -2,7 +2,7 @@
 import { io, Socket } from 'socket.io-client'
 import { AuthService } from './auth.service'
 
-const SOCKET_URL = 'https://postmaxillary-variably-justa.ngrok-free.dev'
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
 
 export interface Message {
   id: string
@@ -56,9 +56,11 @@ class ChatSocketService {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity, // Infinite reconnection attempts
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000,
+      forceNew: false, // Reuse connection
+      multiplex: true, // Allow multiple sockets to same namespace
     })
 
     this.socket.on('connect', () => {
@@ -156,17 +158,19 @@ class ChatSocketService {
   }
 
   /**
-   * Join conversation room
+   * Join conversation room (match backend expectation)
    */
   joinConversation(conversationId: string): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
       if (!this.socket?.connected) {
+        console.log('❌ Socket not connected for join_conversation')
         resolve({ success: false, error: 'Socket not connected' })
         return
       }
 
+      console.log('📥 Emitting join_conversation for:', conversationId)
       this.socket.emit('join_conversation', { conversationId }, (response: any) => {
-        console.log('📥 Joined conversation:', conversationId, response)
+        console.log('✅ join_conversation ack:', response)
         resolve(response)
       })
     })

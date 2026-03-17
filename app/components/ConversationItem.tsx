@@ -2,6 +2,8 @@ import { Conversation } from '@/lib/api/chat.service'
 
 interface ConversationItemProps {
   conversation: Conversation
+  otherUserName: string
+  otherUserAvatar?: string
   isActive: boolean
   onClick: () => void
   onDelete: () => void
@@ -9,6 +11,8 @@ interface ConversationItemProps {
 
 export default function ConversationItem({
   conversation,
+  otherUserName,
+  otherUserAvatar,
   isActive,
   onClick,
   onDelete,
@@ -27,29 +31,28 @@ export default function ConversationItem({
 
   return (
     <div
-      className={`flex items-center gap-3 p-4 cursor-pointer border-b hover:bg-gray-50 transition-colors ${
-        isActive ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-      }`}
+      className={`flex items-center gap-3 p-4 cursor-pointer border-b hover:bg-gray-50 transition-colors ${isActive ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+        }`}
       onClick={onClick}
     >
       {/* Avatar */}
       <div className="relative flex-shrink-0">
         <div className="w-12 h-12 rounded-full bg-gray-300 overflow-hidden">
-          {conversation.workerAvatar ? (
+          {otherUserAvatar ? (
             <img
-              src={conversation.workerAvatar}
-              alt={conversation.workerName || 'User'}
+              src={otherUserAvatar}
+              alt={otherUserName || 'User'}
               className="w-full h-full object-cover"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white font-bold">
-              {conversation.workerName?.charAt(0) || '?'}
+              {(otherUserName || 'U').charAt(0)}
             </div>
           )}
         </div>
-        {conversation.unreadCount > 0 && (
-          <div className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg ring-2 ring-white animate-bounce">
-            {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
+        {(conversation.customerUnreadCount > 0 || conversation.providerUnreadCount > 0) && (
+          <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+            {Math.max(conversation.customerUnreadCount, conversation.providerUnreadCount) > 9 ? '9+' : Math.max(conversation.customerUnreadCount, conversation.providerUnreadCount)}
           </div>
         )}
       </div>
@@ -57,19 +60,20 @@ export default function ConversationItem({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="font-semibold text-gray-900 truncate">
-            {conversation.workerName || 'Người dùng'}
+          <h3 className={`font-semibold truncate flex items-center gap-1 ${conversation.isClosed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+            {conversation.isClosed && (
+              <svg className="w-4 h-4 flex-shrink-0 text-gray-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5s-5 2.24-5 5v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z" />
+              </svg>
+            )}
+            {otherUserName || 'Cuộc trò chuyện'}
           </h3>
           <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
-            {formatTime(conversation.lastMessageTime)}
+            {formatTime(conversation.lastMessageAt)}
           </span>
         </div>
-        <p className={`text-sm truncate ${
-          conversation.unreadCount > 0 
-            ? 'text-gray-900 font-semibold' 
-            : 'text-gray-600'
-        }`}>
-          {conversation.lastMessage || 'Chưa có tin nhắn'}
+        <p className={`text-sm truncate ${conversation.isClosed ? 'text-gray-400' : 'text-gray-600'}`}>
+          {conversation.lastMessagePreview || 'Chưa có tin nhắn'}
         </p>
       </div>
 

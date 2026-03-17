@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { quoteService, type Quote } from '@/lib/api/quote.service'
 import { chatService } from '@/lib/api/chat.service'
-import { orderService } from '@/lib/api/order.service'
+import { ProfileService } from '@/lib/api/profile.service'
+import { chatSocketService } from '@/lib/api/chat-socket.service'
 import { useRouter } from 'next/navigation'
 
 interface QuoteSectionProps {
@@ -15,24 +16,50 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
   const router = useRouter()
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(false)
-  const [showQuoteForm, setShowQuoteForm] = useState(false)
-  const [quoteForm, setQuoteForm] = useState({
-    price: '',
-    description: '',
-    estimatedDuration: ''  // Nhập số phút
-  })
 
   useEffect(() => {
-    if (isPostOwner) {
-      loadQuotes()
-    }
+    loadQuotes()
   }, [postId, isPostOwner])
 
   const loadQuotes = async () => {
     try {
       setLoading(true)
       const data = await quoteService.getQuotesByPostId(postId)
-      setQuotes(data)
+      console.log('📊 Quotes loaded:', data)
+
+      const enhancedQuotes = await Promise.all(
+        data.map(async (quote) => {
+          let providerName = quote.providerName || 'Thợ'
+          let providerAvatar: string | undefined = quote.providerAvatar || undefined
+
+          if (quote.providerId) {
+            try {
+              const profile = await ProfileService.getUserProfile(quote.providerId)
+              providerName = profile.displayName || profile.fullName || providerName
+              providerAvatar = profile.avatar || providerAvatar
+
+              if (!providerAvatar && typeof window !== 'undefined') {
+                const avatarKey = `user_avatar_${quote.providerId}`
+                const savedAvatar = localStorage.getItem(avatarKey)
+                if (savedAvatar) {
+                  providerAvatar = savedAvatar
+                }
+              }
+            } catch (error) {
+              console.error('Error loading provider profile:', error)
+            }
+          }
+
+          return {
+            ...quote,
+            providerName,
+            providerAvatar: providerAvatar || undefined
+          } as any
+        })
+      )
+
+      console.log('✅ Enhanced quotes:', enhancedQuotes)
+      setQuotes(enhancedQuotes as Quote[])
     } catch (err) {
       console.error('Error loading quotes:', err)
     } finally {
@@ -40,124 +67,74 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
     }
   }
 
-  const handleCreateQuote = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    try {
-      console.log('Submitting quote for post:', postId)
-      const result = await quoteService.createQuote({
-        postId,
-        price: parseFloat(quoteForm.price),
-        description: quoteForm.description,
-        estimatedDuration: quoteForm.estimatedDuration ? parseInt(quoteForm.estimatedDuration) : undefined
-      })
-      
-      console.log('Quote created:', result)
-      setShowQuoteForm(false)
-      setQuoteForm({ price: '', description: '', estimatedDuration: '' })
-      alert('Đã gửi báo giá thành công!')
-      // Tải lại danh sách báo giá nếu là chủ bài đăng
-      if (isPostOwner) {
-        loadQuotes()
-      }
-    } catch (err: any) {
-      console.error('Failed to create quote:', err)
-      alert(err.message || 'Không thể gửi báo giá. Vui lòng kiểm tra console để xem chi tiết lỗi.')
-    }
-  }
-
   const handleAcceptQuote = async (quoteId: string) => {
-    if (!confirm('Bạn muốn chấp nhận báo giá này?\n\n✅ Hệ thống sẽ tự động:\n- Tạo đơn hàng\n- Mở chat với người thợ')) return
-    
     try {
-      console.log('📤 [QuoteSection] Accepting quote:', quoteId)
-      
-      // Step 1: Accept quote
-      const response = await quoteService.acceptQuoteForChat(quoteId)
-      console.log('✅ [QuoteSection] Quote accepted:', response)
-      
-      // Step 2: Tạo đơn hàng
-      let orderCreated = false
-      let orderNumber = null
-      
-      try {
-        console.log('📦 [QuoteSection] Creating order from quote...')
-        const orderResponse = await orderService.confirmFromQuote(quoteId)
-        console.log('✅ [QuoteSection] Order created:', orderResponse)
-        orderCreated = true
-        orderNumber = orderResponse.orderNumber
-      } catch (orderErr: any) {
-        console.error('❌ [QuoteSection] Failed to create order:', orderErr)
-        
-        if (orderErr.message.includes('400') || orderErr.message.includes('Bad Request')) {
-          console.warn('⚠️ [QuoteSection] Backend chưa hỗ trợ API tạo đơn hàng')
-        } else {
-          console.warn('⚠️ [QuoteSection] Order creation failed, but continuing to chat')
-        }
+      console.log('🎯 Accepting quote and opening chat:', quoteId)
+
+      // Gọi API backend - tự động:
+      // 1. Chấp nhận quote
+      // 2. Tạo/mở conversation cho cả 2
+      // 3. Thay đổi status thành IN_CHAT
+      const result = await quoteService.acceptQuoteForChat(quoteId)
+      console.log('✅ Quote accepted, conversation created:', result)
+
+      // Kết nối socket nếu chưa kết nối
+      if (!chatSocketService.isConnected()) {
+        console.log('🔌 Connecting chat socket...')
+        chatSocketService.connect()
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
-      
-      // Thông báo kết quả
-      let message = '✅ Đã chấp nhận báo giá!\n\n'
-      
-      if (orderCreated && orderNumber) {
-        message += `📦 Đơn hàng #${orderNumber} đã được tạo!\n`
-        message += '👉 Xem chi tiết trong trang "Đơn hàng"\n\n'
-      } else {
-        message += '⚠️ Lưu ý: Hệ thống đơn hàng đang trong giai đoạn phát triển.\n'
-        message += '💬 Bạn có thể chat với người thợ để thảo luận chi tiết.\n\n'
+
+      // Join conversation room để nhận real-time messages
+      if (result.conversationId) {
+        console.log('📥 Joining conversation room:', result.conversationId)
+        await chatSocketService.joinConversation(result.conversationId)
       }
-      
-      message += '💬 Chuyển đến trang tin nhắn...'
-      
-      alert(message)
+
+      alert('Đã chấp nhận báo giá! Chat đã được mở.')
+
+      // Reload quotes để cập nhật status
+      await loadQuotes()
+
+      // Delay để chắc chắn socket đã join conversation
+      await new Promise(resolve => setTimeout(resolve, 800))
+
+      // Redirect đến trang chat
       router.push('/tin-nhan')
-    } catch (err: any) {
-      console.error('❌ [QuoteSection] Accept quote error:', err)
-      alert(err.message || 'Không thể chấp nhận báo giá')
+    } catch (error: any) {
+      console.error('❌ Error accepting quote:', error)
+      alert(error.message || 'Không thể chấp nhận báo giá')
     }
   }
 
   const handleRejectQuote = async (quoteId: string) => {
-    const reason = prompt('Lý do từ chối (tùy chọn):')
-    
-    // Nếu user cancel prompt
-    if (reason === null) {
-      console.log('ℹ️ User cancelled reject')
-      return
-    }
-    
     try {
-      console.log('\n📝 [QuoteSection] Rejecting quote:', quoteId)
-      console.log('📝 [QuoteSection] Reason:', reason || 'No reason')
-      
-      await quoteService.rejectQuote(quoteId, reason || undefined)
-      
-      console.log('✅ [QuoteSection] Quote rejected successfully')
-      console.log('✅ [QuoteSection] Provider will receive notification')
-      
-      // Thông báo thành công
-      alert(
-        '✅ Đã từ chối báo giá!\n\n' +
-        '🔔 Người thợ sẽ nhận được thông báo từ chối' +
-        (reason ? `\n📝 Lý do: "${reason}"` : '')
-      )
-      
+      console.log('Rejecting quote:', quoteId)
+      await quoteService.rejectQuote(quoteId, 'Khách hàng từ chối')
+      console.log('Quote rejected')
+      alert('Đã từ chối báo giá!')
       loadQuotes()
-    } catch (err: any) {
-      console.error('❌ [QuoteSection] Reject error:', err)
-      alert(err.message || 'Không thể từ chối báo giá')
+    } catch (error: any) {
+      console.error('Error rejecting quote:', error)
+      alert(error.message || 'Không thể từ chối báo giá')
     }
   }
 
   const handleRequestOrder = async (quoteId: string) => {
-    if (!confirm('Bạn muốn đặt đơn với báo giá này?')) return
-    
     try {
-      const response = await quoteService.requestOrder(quoteId)
-      alert('Đã gửi yêu cầu đặt đơn thành công!')
-      router.push('/don-hang')
-    } catch (err: any) {
-      alert(err.message || 'Không thể đặt đơn')
+      console.log('Requesting order for quote:', quoteId)
+      const quote = quotes.find(q => q.id === quoteId)
+      if (!quote?.providerId) {
+        throw new Error('Provider ID not found')
+      }
+      const conversation = await chatService.createDirectConversation({
+        providerId: quote.providerId
+      })
+      console.log('Conversation created:', conversation)
+      router.push(`/tin-nhan`)
+    } catch (error: any) {
+      console.error('Error requesting order:', error)
+      alert(error.message || 'Không thể tạo đơn hàng')
     }
   }
 
@@ -191,86 +168,121 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
     }
   }
 
-  // Nếu không phải chủ bài đăng, hiển thị nút báo giá
+  // Non-owner view: view quotes and submit quote
   if (!isPostOwner) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-4 mt-4">
-        <h3 className="font-bold text-lg mb-3">💰 Báo giá</h3>
-        
-        {!showQuoteForm ? (
-          <button
-            onClick={() => setShowQuoteForm(true)}
-            className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium"
-          >
-            Gửi báo giá cho công việc này
-          </button>
-        ) : (
-          <form onSubmit={handleCreateQuote} className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Giá đề xuất (VNĐ) *
-              </label>
-              <input
-                type="number"
-                required
-                value={quoteForm.price}
-                onChange={(e) => setQuoteForm({...quoteForm, price: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                placeholder="VD: 500000"
-              />
+      <div className="bg-white rounded-lg shadow-sm p-4 mt-4 space-y-6">
+        {/* Section 1: Quotes list */}
+        <div>
+          <h3 className="font-bold text-lg mb-3">💰 Các báo giá ({quotes.length})</h3>
+
+          {loading ? (
+            <p className="text-center text-gray-500 py-4">Đang tải...</p>
+          ) : quotes.length === 0 ? (
+            <p className="text-center text-gray-500 py-4">Chưa có báo giá nào</p>
+          ) : (
+            <div className="space-y-3">
+              {quotes.map((quote) => (
+                <div
+                  key={quote.id}
+                  onClick={() => {
+                    if (quote.providerId) {
+                      router.push(`/profile/${quote.providerId}`)
+                    }
+                  }}
+                  className="border border-gray-200 rounded-lg p-4 bg-white hover:bg-blue-50 hover:border-blue-400 transition-all cursor-pointer shadow-sm hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center space-x-3 flex-1">
+                      {quote.providerAvatar ? (
+                        <img
+                          src={quote.providerAvatar}
+                          alt={quote.providerName || 'Thợ'}
+                          className="w-14 h-14 rounded-full object-cover border-2 border-gray-200"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement
+                            target.style.display = 'none'
+                          }}
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                          {quote.providerName?.[0] || '?'}
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 hover:text-blue-600 transition-colors">
+                          {quote.providerName || 'Thợ'}
+                        </p>
+                        <p className="text-sm text-gray-500">Nhấn để xem profile</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-green-600">{quote.price?.toLocaleString('vi-VN')} ₫</p>
+                      <p className="text-xs text-gray-400 mt-1">Giá đề xuất</p>
+                    </div>
+                  </div>
+
+                  {quote.description && (
+                    <div className="mb-3 p-3 bg-gray-50 rounded-lg border-l-4 border-orange-400">
+                      <p className="text-sm text-gray-700">{quote.description}</p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-sm mb-3">
+                    {quote.estimatedDuration ? (
+                      <span className="text-gray-600">
+                        <span className="mr-2">⏱️</span>Dự kiến: {quote.estimatedDuration} phút
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">Không có thời gian dự kiến</span>
+                    )}
+                    <span className="text-xs text-gray-400 px-2 py-1 bg-gray-100 rounded">
+                      ID: {quote.id.slice(0, 8)}...
+                    </span>
+                  </div>
+
+                  <div className="flex space-x-2 mt-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleAcceptQuote(quote.id)
+                      }}
+                      className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      ✓ Chấp nhận
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleRejectQuote(quote.id)
+                      }}
+                      className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Từ chối
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mô tả chi tiết *
-              </label>
-              <textarea
-                required
-                value={quoteForm.description}
-                onChange={(e) => setQuoteForm({...quoteForm, description: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                rows={3}
-                placeholder="Mô tả chi tiết về dịch vụ bạn cung cấp..."
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Thời gian dự kiến (phút) - Tùy chọn
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={quoteForm.estimatedDuration}
-                onChange={(e) => setQuoteForm({...quoteForm, estimatedDuration: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                placeholder="VD: 120 (2 giờ) - Có thể bỏ trống"
-              />
-            </div>
-            <div className="flex space-x-2">
-              <button
-                type="submit"
-                className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium"
-              >
-                Gửi báo giá
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowQuoteForm(false)}
-                className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium"
-              >
-                Hủy
-              </button>
-            </div>
-          </form>
-        )}
+          )}
+        </div>
       </div>
     )
   }
 
-  // Nếu là chủ bài đăng, hiển thị danh sách báo giá
+  // Owner view: view quotes
   return (
     <div className="bg-white rounded-lg shadow-sm p-4 mt-4">
-      <h3 className="font-bold text-lg mb-3">💰 Các báo giá ({quotes.length})</h3>
-      
+      <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        Các báo giá ({quotes.length})
+      </h3>
+
       {loading ? (
         <p className="text-center text-gray-500 py-4">Đang tải...</p>
       ) : quotes.length === 0 ? (
@@ -278,61 +290,107 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
       ) : (
         <div className="space-y-3">
           {quotes.map((quote) => (
-            <div key={quote.id} className="border border-gray-200 rounded-lg p-3">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                    {quote.providerAvatar || '🔧'}
-                  </div>
+            <div
+              key={quote.id}
+              className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-lg hover:border-blue-400 transition-all"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div
+                  className="flex items-center space-x-3 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    if (quote.providerId) {
+                      router.push(`/profile/${quote.providerId}`)
+                    }
+                  }}
+                >
+                  {quote.providerAvatar ? (
+                    <img
+                      src={quote.providerAvatar}
+                      alt={quote.providerName || 'Thợ'}
+                      className="w-14 h-14 rounded-full object-cover border-2 border-gray-200"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                      }}
+                    />
+                  ) : (
+                    <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                      {(quote.providerName || 'T').charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
-                    <p className="font-medium">{quote.providerName || 'Thợ'}</p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(quote.status)}`}>
-                      {getStatusText(quote.status)}
-                    </span>
+                    <p className="font-semibold text-gray-900 hover:text-blue-600 transition-colors">
+                      {quote.providerName || 'Thợ'}
+                    </p>
+                    <p className="text-xs text-gray-400">Nhấn để xem profile</p>
                   </div>
                 </div>
-                <p className="text-lg font-bold text-orange-600">
-                  {quote.price.toLocaleString('vi-VN')}đ
-                </p>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-orange-600">
+                    {quote.price.toLocaleString('vi-VN')}đ
+                  </p>
+                  <span className={`inline-block text-xs px-2 py-1 rounded-full mt-1 ${getStatusColor(quote.status)}`}>
+                    {getStatusText(quote.status)}
+                  </span>
+                </div>
               </div>
-              
-              <p className="text-sm text-gray-700 mb-2">{quote.description}</p>
-              
-              {quote.estimatedDuration && (
-                <p className="text-xs text-gray-500 mb-2">
-                  ⏱️ Thời gian dự kiến: {
-                    quote.estimatedDuration >= 60 
-                      ? `${Math.floor(quote.estimatedDuration / 60)} giờ ${quote.estimatedDuration % 60 > 0 ? `${quote.estimatedDuration % 60} phút` : ''}`
-                      : `${quote.estimatedDuration} phút`
-                  }
-                </p>
-              )}
-              
-              <p className="text-xs text-gray-400 mb-3">
-                {new Date(quote.createdAt).toLocaleDateString('vi-VN')}
-              </p>
-              
+
+              <div className="mb-3 p-3 bg-gray-50 rounded-lg border-l-4 border-orange-400">
+                <p className="text-sm text-gray-700">{quote.description}</p>
+              </div>
+
+              <div className="flex items-center justify-between text-sm mb-3">
+                {quote.estimatedDuration ? (
+                  <span className="text-gray-600">
+                    <span className="mr-2">⏱️</span>Dự kiến: {
+                      quote.estimatedDuration >= 60
+                        ? `${Math.floor(quote.estimatedDuration / 60)}h ${quote.estimatedDuration % 60 > 0 ? `${quote.estimatedDuration % 60}m` : ''}`
+                        : `${quote.estimatedDuration}m`
+                    }
+                  </span>
+                ) : (
+                  <span className="text-gray-400">Không có thời gian dự kiến</span>
+                )}
+                <span className="text-xs text-gray-400">
+                  {new Date(quote.createdAt).toLocaleDateString('vi-VN')}
+                </span>
+              </div>
+
               {quote.status === 'PENDING' && (
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 mt-3">
                   <button
                     onClick={() => handleAcceptQuote(quote.id)}
-                    className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium"
+                    className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
                   >
-                    Chấp nhận & Mở chat
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Chấp nhận
                   </button>
                   <button
                     onClick={() => handleRejectQuote(quote.id)}
-                    className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
                   >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                     Từ chối
                   </button>
                 </div>
               )}
-              
+
+              {quote.status !== 'PENDING' && (
+                <div className="mt-3 p-3 bg-gray-100 rounded-lg text-center">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Trạng thái: <span className={getStatusColor(quote.status)}>{getStatusText(quote.status)}</span>
+                  </p>
+                </div>
+              )}
+
               {quote.status === 'IN_CHAT' && (
                 <button
                   onClick={() => handleRequestOrder(quote.id)}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium mt-3"
                 >
                   Đặt đơn ngay
                 </button>
