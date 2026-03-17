@@ -8,8 +8,11 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-v
  */
 export async function GET(request: NextRequest) {
   try {
+    console.log('📦 [API Route] GET /api/orders called')
+    
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
+      console.error('📦 [API Route] No auth header')
       return NextResponse.json(
         { error: 'Unauthorized - Missing token' },
         { status: 401 }
@@ -22,12 +25,16 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit') || '20'
     const cursor = searchParams.get('cursor') || ''
 
+    console.log('📦 [API Route] Query params:', { status, role, limit, cursor })
+
     const queryString = new URLSearchParams({
       limit,
       ...(status && { status }),
       ...(role && { role }),
       ...(cursor && { cursor })
     }).toString()
+
+    console.log('📦 [API Route] Calling backend:', `${API_BASE_URL}/orders?${queryString}`)
 
     const response = await fetch(`${API_BASE_URL}/orders?${queryString}`, {
       method: 'GET',
@@ -38,9 +45,13 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    console.log('📦 [API Route] Backend response status:', response.status)
+
     const data = await response.json()
+    console.log('📦 [API Route] Backend response data:', data)
 
     if (!response.ok) {
+      console.error('📦 [API Route] Backend error:', data)
       return NextResponse.json(
         { error: data.error || 'Failed to fetch orders' },
         { status: response.status }

@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-variably-justa.ngrok-free.dev/api/v1'
+
 // POST /api/chat/conversations/[id]/close - Đóng conversation
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
+    const authHeader = request.headers.get('authorization')
     
-    if (!token) {
+    if (!authHeader) {
       return NextResponse.json(
         { message: 'Unauthorized' },
         { status: 401 }
@@ -17,13 +19,28 @@ export async function POST(
 
     const { id } = params
 
-    // Trong production, cập nhật conversation status trong database
-    // await closeConversation(id)
+    console.log('🔔 [Close Conversation] Calling backend API...', id)
 
-    return NextResponse.json(
-      { message: 'Conversation closed successfully' },
-      { status: 200 }
-    )
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/${id}/close`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      }
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      console.error('❌ [Close Conversation] Error:', data)
+      return NextResponse.json(
+        { message: data.message || 'Failed to close conversation' },
+        { status: response.status }
+      )
+    }
+
+    return NextResponse.json(data, { status: 200 })
   } catch (error) {
     console.error('Error closing conversation:', error)
     return NextResponse.json(

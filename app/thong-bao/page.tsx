@@ -7,6 +7,8 @@ import { notificationService, type Notification } from '@/lib/api/notification.s
 import { socketService } from '@/lib/api/socket.service'
 import { quoteService, type Quote } from '@/lib/api/quote.service'
 import { ProfileService } from '@/lib/api/profile.service'
+import { chatService } from '@/lib/api/chat.service'
+import { orderService } from '@/lib/api/order.service'
 
 export default function ThongBaoPage() {
   const router = useRouter()
@@ -165,13 +167,63 @@ export default function ThongBaoPage() {
   }
 
   const handleDeleteAllRead = async () => {
-    if (!confirm('Bạn có chắc muốn xóa tất cả thông báo đã đọc?')) return
+    const readNotifications = notifications.filter(n => n.isRead)
+    const readCount = readNotifications.length
+    
+    console.log('🗑️ handleDeleteAllRead called')
+    console.log('🗑️ Total notifications:', notifications.length)
+    console.log('🗑️ Read count:', readCount)
+    console.log('🗑️ Read notifications:', readNotifications.map(n => ({ id: n.id, title: n.title, isRead: n.isRead })))
+    
+    if (readCount === 0) {
+      alert('Không có thông báo đã đọc nào để xóa')
+      return
+    }
+    
+    if (!confirm(`Bạn có chắc muốn xóa ${readCount} thông báo đã đọc không?\n\nHành động này không thể hoàn tác.`)) {
+      console.log('🗑️ User cancelled deletion')
+      return
+    }
     
     try {
-      await notificationService.deleteAllRead()
+      console.log('🗑️ Starting deletion process...')
+      console.log('🗑️ Method: Delete each notification individually')
+      
+      // Xóa từng thông báo đã đọc
+      let successCount = 0
+      let errorCount = 0
+      
+      for (const notification of readNotifications) {
+        try {
+          console.log(`🗑️ Deleting notification ${notification.id}...`)
+          await notificationService.deleteNotification(notification.id)
+          successCount++
+          console.log(`✅ Deleted ${successCount}/${readCount}`)
+        } catch (err: any) {
+          console.error(`❌ Failed to delete ${notification.id}:`, err.message)
+          errorCount++
+        }
+      }
+      
+      console.log(`🗑️ Deletion complete: ${successCount} success, ${errorCount} failed`)
+      
+      // Lọc bỏ tất cả notification đã đọc
       setNotifications(prev => prev.filter(notif => !notif.isRead))
-    } catch (err) {
-      console.error('Error deleting read notifications:', err)
+      
+      // Refresh unread count để đảm bảo đúng
+      await fetchUnreadCount()
+      
+      if (errorCount === 0) {
+        console.log('✅ All read notifications deleted successfully')
+        alert(`✅ Đã xóa ${successCount} thông báo đã đọc`)
+      } else {
+        alert(`⚠️ Đã xóa ${successCount}/${readCount} thông báo.\n${errorCount} thông báo không xóa được.`)
+      }
+    } catch (err: any) {
+      console.error('❌ Error deleting read notifications:', err)
+      console.error('❌ Error message:', err.message)
+      console.error('❌ Error stack:', err.stack)
+      alert(`Không thể xóa thông báo: ${err.message}`)
     }
   }
 
@@ -290,40 +342,178 @@ export default function ThongBaoPage() {
   const handleAcceptQuote = async (quoteId: string) => {
     try {
       setQuoteLoading(true)
-      console.log('📤 Accepting quote:', quoteId)
+      console.log('\n=== START ACCEPT QUOTE FLOW ===')
+      console.log('📤 QuoteId:', quoteId)
       
-      const response = await quoteService.acceptQuoteForChat(quoteId)
-      console.log('✅ Quote accepted, response:', response)
+      // Tìm quote để lấy providerId
+      const quote = quotes.find(q => q.id === quoteId)
+      console.log('🔍 Quote data:', quote)
+      console.log('🔍 ProviderId:', quote?.providerId)
       
-      // Backend trả về conversationId sau khi tạo conversation
-      const conversationId = response.conversationId || response.data?.conversationId
+      if (!quote || !quote.providerId) {
+        throw new Error('Không tìm thấy thông tin người thợ')
+      }
       
-      console.log('✅ ConversationId:', conversationId)
+      // Step 1: Accept quote (backend sẽ thay đổi status thành accepted_for_chat)
+      console.log('\n📤 Step 1: Calling acceptQuoteForChat API...')
+      let response
+      let backendAcceptSuccess = false
       
-      // Đóng modal
+      try {
+        response = await quoteService.acceptQuoteForChat(quoteId)
+        console.log('✅ Quote accepted, response:', response)
+        
+        // Kiểm tra nếu backend accept thành công
+        if (response.success !== false) {
+          backendAcceptSuccess = true
+          console.log('✅ Backend accept thành công')
+        } else {
+          console.warn('⚠️ Backend accept thất bại, nhưng vẫn tiếp tục tạo conversation')
+        }
+      } catch (error: any) {
+        console.error('❌ Backend accept quote lỗi:', error)
+        console.warn('⚠️ Sẽ vẫn tiếp tục tạo conversation để user có thể chat')
+        // KHÔNG throw error, vẫn tiếp tục
+      }
+      
+      // Step 2: Tạo conversation với worker (LUÔN TẠO MỚI để đảm bảo có conversation)
+      console.log('\n💬 Step 2: Creating conversation with worker...')
+      let conversationId = null
+      
+      try {
+        console.log('💬 Calling createDirectConversation with workerId:', quote.providerId)
+        const conversation = await chatService.createDirectConversation({
+          workerId: quote.providerId
+        })
+        conversationId = conversation.id
+        console.log('✅ Conversation created successfully!')
+        console.log('✅ ConversationId:', conversationId)
+        console.log('✅ Conversation data:', conversation)
+      } catch (error: any) {
+        console.error('❌ Failed to create conversation:', error)
+        console.error('❌ Error message:', error.message)
+        console.error('❌ Error stack:', error.stack)
+        
+        // KHÔNG throw error, vẫn cho phép user vào trang chat
+        // Hoặc conversation đã tồn tại, hoặc sẽ tạo từ trang chat
+        console.warn('⚠️ Không tạo được conversation ngay, nhưng vẫn redirect đến chat')
+        conversationId = null
+      }
+      
+      // Step 3: Tạo đơn hàng từ báo giá
+      console.log('\n📦 Step 3: Creating order from quote...')
+      let orderCreated = false
+      let orderNumber = null
+      
+      try {
+        console.log('📦 Calling confirmFromQuote API with quoteId:', quoteId)
+        const orderResponse = await orderService.confirmFromQuote(quoteId, {
+          notes: `Khách hàng đã chấp nhận báo giá ${quote.price.toLocaleString('vi-VN')}đ`
+        })
+        console.log('✅ Order created successfully:', orderResponse)
+        orderCreated = true
+        orderNumber = orderResponse.orderNumber
+        console.log('✅ Order number:', orderNumber)
+      } catch (error: any) {
+        console.error('❌ Failed to create order:', error)
+        console.error('❌ Error message:', error.message)
+        
+        if (error.message.includes('400') || error.message.includes('Bad Request')) {
+          console.warn('⚠️ Backend chưa hỗ trợ API tạo đơn hàng')
+          console.warn('⚠️ Bỏ qua tạo đơn hàng, chỉ tạo conversation để chat')
+        } else {
+          console.warn('⚠️ Không tạo được đơn hàng, nhưng vẫn tiếp tục')
+        }
+        // KHÔNG throw error, vẫn cho phép chat và xử lý sau
+      }
+      
+      // Step 4: Gửi tin nhắn đầu tiên cho thợ (nếu có conversationId)
+      if (conversationId) {
+        console.log('\n📤 Step 4: Sending initial message to worker...')
+        try {
+          let initialMessage = `Xin chào! Tôi đã chấp nhận báo giá ${quote.price.toLocaleString('vi-VN')}đ của bạn cho công việc "${quote.description}".`
+          
+          if (orderCreated && orderNumber) {
+            initialMessage += `\n\n📦 Đơn hàng #${orderNumber} đã được tạo. Hãy vào trang "Đơn hàng" để xem chi tiết!`
+          }
+          
+          initialMessage += `\n\nChúng ta có thể trao đổi thêm không?`
+          
+          console.log('📤 Sending message:', initialMessage)
+          
+          await chatService.sendMessage(conversationId, {
+            content: initialMessage
+          })
+          
+          console.log('✅ Initial message sent successfully!')
+        } catch (error: any) {
+          console.error('❌ Failed to send initial message:', error)
+          console.warn('⚠️ Không gửi được tin nhắn đầu tiên, nhưng vẫn tiếp tục')
+          // KHÔNG throw error, vẫn redirect đến chat
+        }
+      }
+      
+      console.log('\n✅ === ACCEPT QUOTE FLOW COMPLETED ===')
+      console.log('✅ Backend accept:', backendAcceptSuccess ? 'Success' : 'Failed but continued')
+      console.log('✅ Order created:', orderCreated ? `Yes (${orderNumber})` : 'No')
+      console.log('✅ ConversationId:', conversationId || 'Will load from chat page')
+      console.log('✅ Redirecting to chat...')
+      
+      // Đóng modal trước khi redirect
       setShowQuoteModal(false)
       setSelectedQuote(null)
       
-      // Thông báo thành công - Rõ ràng hơn
-      const successMessage = conversationId 
-        ? '✅ Đã chấp nhận báo giá!\n\n🔔 Hệ thống đã gửi thông báo cho thợ\n💬 Đang chuyển đến phần chat...'
-        : '✅ Đã chấp nhận báo giá!\n\n🔔 Thợ sẽ nhận được thông báo\n💬 Đang chuyển đến phần tin nhắn...'
+      // Thông báo thành công
+      let message = '✅ Đã chấp nhận báo giá!\n\n'
       
-      alert(successMessage)
+      if (orderCreated && orderNumber) {
+        message += `📦 Đơn hàng #${orderNumber} đã được tạo!\n`
+        message += '👉 Bạn và người thợ đều có thể xem đơn hàng trong trang "Đơn hàng"\n\n'
+      } else {
+        message += '⚠️ Lưu ý: Hệ thống đơn hàng đang trong giai đoạn phát triển.\n'
+        message += '💬 Bạn có thể chat với người thợ để thảo luận chi tiết công việc.\n\n'
+      }
       
-      // Chuyển đến trang tin nhắn
-      // Nếu có conversationId, có thể thêm query param để mở conversation cụ thể
       if (conversationId) {
-        console.log('💬 Redirecting to conversation:', conversationId)
+        message += '💬 Đang chuyển đến trang tin nhắn với người thợ...'
+      } else {
+        message += '💬 Đang chuyển đến trang tin nhắn...\nBạn có thể tìm cuộc trò chuyện với người thợ ở đó.'
+      }
+      
+      alert(message)
+      
+      // Đợi 500ms để backend có thời gian xử lý và lưu conversation
+      console.log('⏳ Waiting 500ms for backend to process...')
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // LUÔN LUÔN chuyển đến trang tin nhắn, dù có lỗi
+      if (conversationId) {
+        console.log('💬 Redirecting to specific conversation:', conversationId)
         router.push(`/tin-nhan?conversation=${conversationId}`)
       } else {
-        console.log('💬 No conversationId, redirecting to tin-nhan page')
+        console.log('💬 Redirecting to chat page')
         router.push('/tin-nhan')
       }
       
     } catch (error: any) {
-      console.error('❌ Error accepting quote:', error)
-      alert(error.message || 'Không thể chấp nhận báo giá')
+      console.error('\n❌ === ACCEPT QUOTE FLOW FAILED ===')
+      console.error('❌ Error:', error)
+      console.error('❌ Message:', error.message)
+      console.error('❌ Stack:', error.stack)
+      
+      // Dù có lỗi, vẫn thử redirect đến trang chat
+      setShowQuoteModal(false)
+      setSelectedQuote(null)
+      
+      const shouldRedirect = confirm(
+        '⚠️ Có lỗi xảy ra: ' + (error.message || 'Không rõ nguyên nhân') + 
+        '\n\nBạn có muốn vào trang tin nhắn để kiểm tra không?'
+      )
+      
+      if (shouldRedirect) {
+        console.log('💬 User chose to redirect to chat despite error')
+        router.push('/tin-nhan')
+      }
     } finally {
       setQuoteLoading(false)
     }
@@ -333,19 +523,35 @@ export default function ThongBaoPage() {
   const handleRejectQuote = async (quoteId: string) => {
     const reason = prompt('Lý do từ chối (tùy chọn):')
     
+    // Nếu user cancel prompt
+    if (reason === null) {
+      console.log('ℹ️ User cancelled reject')
+      return
+    }
+    
     try {
       setQuoteLoading(true)
+      console.log('\n📝 [Reject Quote] QuoteId:', quoteId)
+      console.log('📝 [Reject Quote] Reason:', reason || 'No reason')
+      
       await quoteService.rejectQuote(quoteId, reason || undefined)
-      console.log('✅ Quote rejected')
+      
+      console.log('✅ [Reject Quote] Quote rejected successfully')
+      console.log('✅ [Reject Quote] Provider will receive notification from backend')
       
       // Cập nhật quotes list
       setQuotes(prev => prev.map(q => 
         q.id === quoteId ? { ...q, status: 'REJECTED' } : q
       ))
       
-      alert('Đã từ chối báo giá')
+      // Thông báo thành công với thông tin rõ ràng
+      alert(
+        '✅ Đã từ chối báo giá!\n\n' +
+        '🔔 Người thợ sẽ nhận được thông báo từ chối' +
+        (reason ? `\n📝 Lý do: "${reason}"` : '')
+      )
     } catch (error: any) {
-      console.error('❌ Error rejecting quote:', error)
+      console.error('❌ [Reject Quote] Error:', error)
       alert(error.message || 'Không thể từ chối báo giá')
     } finally {
       setQuoteLoading(false)
@@ -427,17 +633,22 @@ export default function ThongBaoPage() {
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllAsRead}
-                  className="text-sm text-orange-600 hover:text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-50"
+                  className="text-sm text-orange-600 hover:text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-50 transition-colors"
                 >
-                  Đánh dấu tất cả đã đọc
+                  ✓ Đọc tất cả
                 </button>
               )}
-              <button
-                onClick={handleDeleteAllRead}
-                className="text-sm text-red-600 hover:text-red-700 px-3 py-1 rounded-lg hover:bg-red-50"
-              >
-                Xóa đã đọc
-              </button>
+              {notifications.some(n => n.isRead) && (
+                <button
+                  onClick={handleDeleteAllRead}
+                  className="flex items-center space-x-1 text-sm text-red-600 hover:text-red-700 px-3 py-1 rounded-lg hover:bg-red-50 transition-colors font-medium"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span>Xóa đã đọc</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -508,9 +719,11 @@ export default function ThongBaoPage() {
                     console.log('⚠️ Not a quote notification, type:', notification.type)
                   }
                 }}
-                className={`bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow ${
-                  !notification.isRead ? 'border-l-4 border-orange-500' : ''
-                } ${isQuoteNotification ? 'cursor-pointer' : ''}`}
+                className={`rounded-lg shadow-sm hover:shadow-md transition-all ${
+                  !notification.isRead 
+                    ? 'bg-white border-l-4 border-orange-500' 
+                    : 'bg-gray-50 border-l-4 border-gray-200 opacity-75'
+                } ${isQuoteNotification ? 'cursor-pointer hover:scale-[1.01]' : ''}`}
               >
                 <div className="p-4">
                   <div className="flex items-start space-x-3">

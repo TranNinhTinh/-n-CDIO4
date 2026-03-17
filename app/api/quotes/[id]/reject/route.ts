@@ -22,6 +22,10 @@ export async function POST(
     const { id } = params
     const body = await request.json()
 
+    console.log('📝 [Reject Quote] QuoteId:', id)
+    console.log('📝 [Reject Quote] Reason:', body.reason || 'No reason provided')
+    console.log('📝 [Reject Quote] Calling backend API...')
+
     const response = await fetch(`${API_BASE_URL}/quotes/${id}/reject`, {
       method: 'POST',
       headers: {
@@ -33,14 +37,19 @@ export async function POST(
     })
 
     const data = await response.json()
+    
+    console.log('📝 [Reject Quote] Backend response:', data)
+    console.log('📝 [Reject Quote] Status:', response.status)
 
     if (!response.ok) {
+      console.error('❌ [Reject Quote] Error:', data)
       return NextResponse.json(
         { error: data.error || 'Failed to reject quote' },
         { status: response.status }
       )
     }
 
+    console.log('✅ [Reject Quote] Success! Provider will receive notification')
     return NextResponse.json(data, { status: 200 })
 
   } catch (error) {

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-variably-justa.ngrok-free.dev/api/v1'
+
 // POST /api/chat/conversations/direct - Tạo conversation riêng với thợ
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
+    const authHeader = request.headers.get('authorization')
     
-    if (!token) {
+    if (!authHeader) {
       return NextResponse.json(
         { message: 'Unauthorized' },
         { status: 401 }
@@ -22,29 +24,38 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Mock new conversation
-    const newConversation = {
-      id: `conv${Date.now()}`,
-      workerId,
-      workerName: 'Thợ mới',
-      workerAvatar: '/avatars/default.jpg',
-      lastMessage: null,
-      lastMessageTime: null,
-      unreadCount: 0,
-      isClosed: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    console.log('🔔 [Create Direct Conversation] WorkerId:', workerId)
+    console.log('🔔 [Create Direct Conversation] Calling backend API...')
+
+    // Backend yêu cầu "providerId" không phải "workerId"
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/direct`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
+      body: JSON.stringify({ providerId: workerId })  // ✅ Đổi key thành providerId
+    })
+
+    const data = await response.json()
+    
+    console.log('🔔 [Create Direct Conversation] Backend response:', data)
+    console.log('🔔 [Create Direct Conversation] Status:', response.status)
+
+    if (!response.ok) {
+      console.error('❌ [Create Direct Conversation] Error:', data)
+      return NextResponse.json(
+        { message: data.message || 'Failed to create conversation' },
+        { status: response.status }
+      )
     }
 
-    // Trong production:
-    // 1. Kiểm tra xem conversation với thợ này đã tồn tại chưa
-    // 2. Nếu chưa, tạo mới conversation
-    // 3. Nếu có rồi, trả về conversation hiện tại
-    // const conversation = await findOrCreateConversation(userId, workerId)
+    console.log('✅ [Create Direct Conversation] Success! ConversationId:', data.id)
 
-    return NextResponse.json(newConversation, { status: 201 })
+    return NextResponse.json(data, { status: response.status })
   } catch (error) {
-    console.error('Error creating conversation:', error)
+    console.error('❌ [Create Direct Conversation] Error:', error)
     return NextResponse.json(
       { message: 'Internal server error' },
       { status: 500 }

@@ -38,17 +38,17 @@ export default function ConversationItem({
           {conversation.workerAvatar ? (
             <img
               src={conversation.workerAvatar}
-              alt={conversation.workerName}
+              alt={conversation.workerName || 'User'}
               className="w-full h-full object-cover"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white font-bold">
-              {conversation.workerName.charAt(0)}
+              {conversation.workerName?.charAt(0) || '?'}
             </div>
           )}
         </div>
         {conversation.unreadCount > 0 && (
-          <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+          <div className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg ring-2 ring-white animate-bounce">
             {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
           </div>
         )}
@@ -58,13 +58,17 @@ export default function ConversationItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-gray-900 truncate">
-            {conversation.workerName}
+            {conversation.workerName || 'Người dùng'}
           </h3>
           <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
             {formatTime(conversation.lastMessageTime)}
           </span>
         </div>
-        <p className="text-sm text-gray-600 truncate">
+        <p className={`text-sm truncate ${
+          conversation.unreadCount > 0 
+            ? 'text-gray-900 font-semibold' 
+            : 'text-gray-600'
+        }`}>
           {conversation.lastMessage || 'Chưa có tin nhắn'}
         </p>
       </div>

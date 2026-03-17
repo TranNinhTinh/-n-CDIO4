@@ -46,7 +46,7 @@ const getAccessToken = () => {
   return null
 }
 
-// Generic API call function
+// Generic API call function - calls Next.js API routes instead of backend directly
 async function apiCall<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -54,12 +54,13 @@ async function apiCall<T>(
   const token = getAccessToken()
   
   const headers: HeadersInit = {
-    ...API_CONFIG.HEADERS,
+    'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
     ...options.headers,
   }
 
-  const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
+  // Call Next.js API routes (e.g., /api/chat/conversations) instead of backend directly
+  const response = await fetch(`/api${endpoint}`, {
     ...options,
     headers,
   })

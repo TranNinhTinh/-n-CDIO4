@@ -33,10 +33,20 @@ export default function HomePage() {
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
   
+  // States cho các tính năng mới
+  const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set())
+  const [interestedPosts, setInterestedPosts] = useState<Set<string>>(new Set())
+  const [notifiedPosts, setNotifiedPosts] = useState<Set<string>>(new Set())
+  const [hiddenPosts, setHiddenPosts] = useState<Set<string>>(new Set())
+  
   // Search states
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
+  
+  // Filter and sort states
+  const [sortBy, setSortBy] = useState<'latest' | 'relevant' | 'recent' | 'urgent'>('latest')
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false)
 
   // Load số thông báo và tin nhắn chưa đọc
   const loadUnreadCounts = async () => {
@@ -74,6 +84,58 @@ export default function HomePage() {
     }
   }
 
+  // Sắp xếp bài viết dựa trên sortBy
+  const getSortedPosts = () => {
+    if (!posts || posts.length === 0) return []
+    
+    let sortedPosts = [...posts]
+    
+    switch (sortBy) {
+      case 'latest':
+        // Sắp xếp theo ngày tạo mới nhất
+        sortedPosts.sort((a, b) => {
+          const dateA = new Date(a.createdAt).getTime()
+          const dateB = new Date(b.createdAt).getTime()
+          return dateB - dateA
+        })
+        break
+      
+      case 'relevant':
+        // Sắp xếp theo độ phù hợp (có thể dựa trên likes, comments)
+        sortedPosts.sort((a, b) => {
+          const scoreA = (a.likes || 0) + (a.comments || 0) * 2
+          const scoreB = (b.likes || 0) + (b.comments || 0) * 2
+          return scoreB - scoreA
+        })
+        break
+      
+      case 'recent':
+        // Sắp xếp theo cập nhật gần đây
+        sortedPosts.sort((a, b) => {
+          const dateA = new Date(a.updatedAt || a.createdAt).getTime()
+          const dateB = new Date(b.updatedAt || b.createdAt).getTime()
+          return dateB - dateA
+        })
+        break
+      
+      case 'urgent':
+        // Hiển thị bài gấp trước, sau đó theo thời gian
+        sortedPosts.sort((a, b) => {
+          if (a.urgent && !b.urgent) return -1
+          if (!a.urgent && b.urgent) return 1
+          const dateA = new Date(a.createdAt).getTime()
+          const dateB = new Date(b.createdAt).getTime()
+          return dateB - dateA
+        })
+        break
+      
+      default:
+        break
+    }
+    
+    return sortedPosts
+  }
+
   // Tìm kiếm profiles
   const handleSearch = async (query: string) => {
     setSearchQuery(query)
@@ -105,17 +167,42 @@ export default function HomePage() {
     }
   }
 
-  // Đóng kết quả tìm kiếm khi click bên ngoài
+  // Đóng kết quả tìm kiếm và menu khi click bên ngoài
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('.search-container')) {
         setShowSearchResults(false)
       }
+      // Đóng dropdown menu khi click bên ngoài
+      if (!target.closest('.post-menu-container')) {
+        setOpenMenuId(null)
+      }
+      // Đóng filter dropdown khi click bên ngoài
+      if (!target.closest('.filter-dropdown-container')) {
+        setShowFilterDropdown(false)
+      }
     }
     
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Load saved/interested/notified/hidden posts from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('savedPosts')
+      const interested = localStorage.getItem('interestedPosts')
+      const notified = localStorage.getItem('notifiedPosts')
+      const hidden = localStorage.getItem('hiddenPosts')
+      
+      if (saved) setSavedPosts(new Set(JSON.parse(saved)))
+      if (interested) setInterestedPosts(new Set(JSON.parse(interested)))
+      if (notified) setNotifiedPosts(new Set(JSON.parse(notified)))
+      if (hidden) setHiddenPosts(new Set(JSON.parse(hidden)))
+    } catch (error) {
+      console.error('❌ Không thể load dữ liệu từ localStorage:', error)
+    }
   }, [])
 
   // Kiểm tra authentication khi component mount
@@ -144,14 +231,22 @@ export default function HomePage() {
         
         // ===== NOTIFICATION SOCKET EVENTS =====
         // Lắng nghe thông báo mới
-        const unsubscribeNew = socketService.on('notification:new', (notification) => {
+        const unsubscribeNew = socketService.on('notification:new', async (notification) => {
           console.log('🔔 [Home] Nhận thông báo mới:', notification)
+          console.log('🔔 [Home] Notification isRead:', notification.isRead)
           
-          // Tăng số unread count
-          setUnreadNotificationCount(prev => prev + 1)
+          // RELOAD số đếm chính xác từ API thay vì tăng thủ công
+          // Điều này tránh trường hợp backend gửi nhiều thông báo cùng lúc khi kết nối
+          try {
+            const notificationData = await notificationService.getUnreadCount()
+            setUnreadNotificationCount(notificationData.count || 0)
+            console.log('✅ [Home] Đã cập nhật unread count từ API:', notificationData.count)
+          } catch (error) {
+            console.error('❌ [Home] Lỗi reload unread count:', error)
+          }
           
-          // Hiển thị browser notification
-          if (Notification.permission === 'granted') {
+          // Hiển thị browser notification CHỈ KHI chưa đọc
+          if (!notification.isRead && Notification.permission === 'granted') {
             new Notification('Thông báo mới', {
               body: notification.message || 'Bạn có thông báo mới',
               icon: '/logo.png'
@@ -776,6 +871,13 @@ export default function HomePage() {
               <span className="text-sm">Trang chủ</span>
             </Link>
 
+            <Link href="/don-hang" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+              <span className="text-sm">Đơn hàng</span>
+            </Link>
+
             <Link href="/tin-nhan" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -1025,16 +1127,11 @@ export default function HomePage() {
               )}
             </Link>
 
-            {/* Tin nhắn */}
-            <Link href="/tin-nhan" className="relative hover:bg-gray-100 p-2 rounded-full transition">
+            {/* Đơn hàng */}
+            <Link href="/don-hang" className="relative hover:bg-gray-100 p-2 rounded-full transition">
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
-              {unreadMessageCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {unreadMessageCount}
-                </span>
-              )}
             </Link>
 
             <Link href="/profile" className="cursor-pointer">
@@ -1119,6 +1216,105 @@ export default function HomePage() {
               </div>
             </div>
 
+            {/* Filter and Sort Section */}
+            <div className="bg-white rounded-lg shadow-sm mb-4 p-4">
+              <div className="flex items-center justify-between gap-3">
+                {/* Left: Sort Buttons */}
+                <div className="flex items-center gap-2 flex-1">
+                  <button
+                    onClick={() => setSortBy('latest')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      sortBy === 'latest'
+                        ? 'bg-blue-500 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Đăng Mới
+                  </button>
+                  <button
+                    onClick={() => setSortBy('relevant')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      sortBy === 'relevant'
+                        ? 'bg-blue-500 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Phù hợp
+                  </button>
+                  <button
+                    onClick={() => setSortBy('recent')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      sortBy === 'recent'
+                        ? 'bg-blue-500 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Gần đây
+                  </button>
+                  <button
+                    onClick={() => setSortBy('urgent')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      sortBy === 'urgent'
+                        ? 'bg-blue-500 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Gấp
+                  </button>
+                </div>
+
+                {/* Right: More Filters Dropdown */}
+                <div className="relative filter-dropdown-container">
+                  <button
+                    onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    <span>Bộ lọc</span>
+                    <svg className={`w-4 h-4 transition-transform ${
+                      showFilterDropdown ? 'rotate-180' : ''
+                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {/* Filter Dropdown */}
+                  {showFilterDropdown && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
+                      <button className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Theo giá</span>
+                      </button>
+                      <button className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span>Theo địa điểm</span>
+                      </button>
+                      <button className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                        <span>Theo danh mục</span>
+                      </button>
+                      <div className="border-t border-gray-200 my-2"></div>
+                      <button className="w-full px-4 py-2.5 text-left hover:bg-blue-50 flex items-center gap-3 text-blue-600 text-sm transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Đặt lại bộ lọc</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Posts */}
             {loadingPosts ? (
               <>
@@ -1144,7 +1340,9 @@ export default function HomePage() {
                 </button>
               </div>
             ) : (
-              posts.map(post => {
+              getSortedPosts()
+                .filter(post => !hiddenPosts.has(post.id)) // Lọc bỏ các bài viết đã ẩn
+                .map(post => {
                 // Kiểm tra xem bài viết có phải của currentUser không
                 // So sánh nhiều trường có thể có
                 const isMyPost = 
@@ -1192,7 +1390,7 @@ export default function HomePage() {
                     </div>
                     
                     {/* Dropdown Menu - Luôn hiển thị nút, kiểm tra ownership trong menu */}
-                    <div className="relative">
+                    <div className="relative post-menu-container">
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -1208,20 +1406,21 @@ export default function HomePage() {
                       {/* Dropdown Menu */}
                       {openMenuId === post.id && (
                         <div 
-                          className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50"
+                          className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {/* Kiểm tra ownership */}
                           {currentUser && post.customerId === currentUser.id ? (
                             <>
+                              {/* Menu cho chủ bài viết */}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   handleEditPost(post.id)
                                 }}
-                                className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                                className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                                 <span>Chỉnh sửa</span>
@@ -1233,9 +1432,9 @@ export default function HomePage() {
                                     e.stopPropagation()
                                     handleClosePost(post.id)
                                   }}
-                                  className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                                  className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
                                 >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
                                   <span>Đóng bài đăng</span>
@@ -1249,36 +1448,110 @@ export default function HomePage() {
                                   e.stopPropagation()
                                   handleDeletePost(post.id)
                                 }}
-                                className="w-full px-4 py-2 text-left hover:bg-red-50 flex items-center gap-3 text-red-600 text-sm transition-colors"
+                                className="w-full px-4 py-2.5 text-left hover:bg-red-50 flex items-center gap-3 text-red-600 text-sm transition-colors"
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
                                 <span>Xóa</span>
                               </button>
                             </>
                           ) : (
-                            <div className="px-4 py-3">
-                              <p className="text-sm text-gray-500 text-center">
-                                {!currentUser ? 'Vui lòng đăng nhập' : 'Chỉ chủ bài đăng mới có thể chỉnh sửa'}
-                              </p>
-                              <div className="mt-2 pt-2 border-t border-gray-200">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    console.log('Debug Info:', {
-                                      currentUserId: currentUser?.id,
-                                      postCustomerId: post.customerId,
-                                      post: post
-                                    })
-                                    alert('Debug: Check console for user/post info')
-                                  }}
-                                  className="w-full text-xs text-blue-600 hover:underline"
-                                >
-                                  Debug Info
-                                </button>
-                              </div>
-                            </div>
+                            <>
+                              {/* Menu cho người dùng khác */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setOpenMenuId(null)
+                                  const newInterested = new Set(interestedPosts)
+                                  if (newInterested.has(post.id)) {
+                                    newInterested.delete(post.id)
+                                    alert('Đã bỏ quan tâm bài viết!')
+                                  } else {
+                                    newInterested.add(post.id)
+                                    alert('Đã quan tâm đến bài viết!')
+                                  }
+                                  setInterestedPosts(newInterested)
+                                  localStorage.setItem('interestedPosts', JSON.stringify([...newInterested]))
+                                }}
+                                className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                              >
+                                <svg className={`w-5 h-5 ${interestedPosts.has(post.id) ? 'fill-red-500 text-red-500' : ''}`} fill={interestedPosts.has(post.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                </svg>
+                                <span>{interestedPosts.has(post.id) ? 'Bỏ quan tâm' : 'Quan tâm'}</span>
+                              </button>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setOpenMenuId(null)
+                                  const newSaved = new Set(savedPosts)
+                                  if (newSaved.has(post.id)) {
+                                    newSaved.delete(post.id)
+                                    console.log('🗑️ Đã bỏ lưu bài viết:', post.id)
+                                    alert('Đã bỏ lưu bài viết!')
+                                  } else {
+                                    newSaved.add(post.id)
+                                    console.log('💾 Đã lưu bài viết:', post.id)
+                                    console.log('💾 Danh sách đã lưu:', [...newSaved])
+                                    alert('Đã lưu bài viết!')
+                                  }
+                                  setSavedPosts(newSaved)
+                                  localStorage.setItem('savedPosts', JSON.stringify([...newSaved]))
+                                  console.log('💾 Đã cập nhật localStorage:', localStorage.getItem('savedPosts'))
+                                }}
+                                className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                              >
+                                <svg className={`w-5 h-5 ${savedPosts.has(post.id) ? 'fill-blue-500 text-blue-500' : ''}`} fill={savedPosts.has(post.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                                </svg>
+                                <span>{savedPosts.has(post.id) ? 'Bỏ lưu' : 'Lưu bài viết'}</span>
+                              </button>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setOpenMenuId(null)
+                                  const newNotified = new Set(notifiedPosts)
+                                  if (newNotified.has(post.id)) {
+                                    newNotified.delete(post.id)
+                                    alert('Đã tắt thông báo cho bài viết này!')
+                                  } else {
+                                    newNotified.add(post.id)
+                                    alert('Đã bật thông báo cho bài viết này!')
+                                  }
+                                  setNotifiedPosts(newNotified)
+                                  localStorage.setItem('notifiedPosts', JSON.stringify([...newNotified]))
+                                }}
+                                className="w-full px-4 py-2.5 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                              >
+                                <svg className={`w-5 h-5 ${notifiedPosts.has(post.id) ? 'fill-yellow-500 text-yellow-500' : ''}`} fill={notifiedPosts.has(post.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                <span>{notifiedPosts.has(post.id) ? 'Tắt thông báo' : 'Bật thông báo cho bài viết này'}</span>
+                              </button>
+
+                              <div className="border-t border-gray-200 my-2"></div>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setOpenMenuId(null)
+                                  const newHidden = new Set(hiddenPosts)
+                                  newHidden.add(post.id)
+                                  setHiddenPosts(newHidden)
+                                  localStorage.setItem('hiddenPosts', JSON.stringify([...newHidden]))
+                                  alert('Đã ẩn bài viết! Bài viết sẽ không hiển thị nữa.')
+                                }}
+                                className="w-full px-4 py-2.5 text-left hover:bg-red-50 flex items-center gap-3 text-red-600 text-sm transition-colors"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                </svg>
+                                <span>Ẩn bài viết</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       )}
@@ -1337,20 +1610,18 @@ export default function HomePage() {
                     <span className="text-gray-700 font-medium">Thích</span>
                   </button>
                   
-                  {!isMyPost && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleSendMessageToAuthor(post)
-                      }}
-                      className="flex items-center space-x-2 px-4 py-2 hover:bg-blue-50 rounded-lg transition"
-                    >
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                      <span className="text-blue-600 font-medium">Nhắn tin</span>
-                    </button>
-                  )}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push(`/posts/${post.id}?action=quote`)
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 hover:bg-green-50 rounded-lg transition"
+                  >
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-green-600 font-medium">Chào giá</span>
+                  </button>
 
                   <button className="flex items-center space-x-2 px-4 py-2 hover:bg-gray-50 rounded-lg transition">
                     <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -11,8 +11,11 @@ export async function POST(
   { params }: { params: { quoteId: string } }
 ) {
   try {
+    console.log('📦 [API Route] POST /api/orders/confirm-from-quote called')
+    
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
+      console.error('📦 [API Route] No auth header')
       return NextResponse.json(
         { error: 'Unauthorized - Missing token' },
         { status: 401 }
@@ -20,8 +23,13 @@ export async function POST(
     }
 
     const { quoteId } = params
+    console.log('📦 [API Route] QuoteId:', quoteId)
+    
     const body = await request.json()
+    console.log('📦 [API Route] Request body:', body)
 
+    console.log('📦 [API Route] Calling backend:', `${API_BASE_URL}/orders/confirm-from-quote/${quoteId}`)
+    
     const response = await fetch(`${API_BASE_URL}/orders/confirm-from-quote/${quoteId}`, {
       method: 'POST',
       headers: {
@@ -32,19 +40,24 @@ export async function POST(
       body: JSON.stringify(body)
     })
 
+    console.log('📦 [API Route] Backend response status:', response.status)
+    
     const data = await response.json()
+    console.log('📦 [API Route] Backend response data:', data)
 
     if (!response.ok) {
+      console.error('📦 [API Route] Backend error:', data)
       return NextResponse.json(
         { error: data.error || 'Failed to confirm order' },
         { status: response.status }
       )
     }
 
+    console.log('✅ [API Route] Order created successfully')
     return NextResponse.json(data, { status: 201 })
 
   } catch (error) {
-    console.error('Error confirming order:', error)
+    console.error('📦 [API Route] Exception:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

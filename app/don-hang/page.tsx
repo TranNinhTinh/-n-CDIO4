@@ -28,15 +28,48 @@ export default function DonHangPage() {
   const fetchOrders = async () => {
     try {
       setLoading(true)
-      const response = await orderService.getOrders({
-        status: statusFilter || undefined,
-        role: roleFilter || undefined,
-        limit: 50
-      })
-      setOrders(response.data)
+      console.log('📦 [Orders Page] Fetching orders...')
+      
+      try {
+        // Thử gọi API thật trước
+        const response = await orderService.getOrders({
+          status: statusFilter || undefined,
+          role: roleFilter || undefined,
+          limit: 50
+        })
+        console.log('✅ [Orders Page] Orders fetched from API:', response)
+        setOrders(response.data)
+        setError('')
+      } catch (apiErr: any) {
+        console.warn('⚠️ [Orders Page] API không khả dụng, sử dụng mock data')
+        
+        // Backend chưa có API, dùng mock data
+        // TODO: Xóa mock data này khi backend đã sẵn sàng
+        const mockOrders: Order[] = [
+          {
+            id: 'mock-order-1',
+            orderNumber: 'ORD-001',
+            quoteId: 'quote-1',
+            postId: 'post-1',
+            customerId: 'customer-1',
+            providerId: 'provider-1',
+            customerName: 'Khách hàng A',
+            providerName: 'Thợ B',
+            price: 500000,
+            description: 'Sửa chữa điện nước',
+            status: 'CONFIRMED',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }
+        ]
+        
+        setOrders(mockOrders)
+        setError('⚠️ Đang dùng dữ liệu mẫu. Backend API chưa sẵn sàng.')
+      }
     } catch (err: any) {
-      console.error('Error fetching orders:', err)
-      setError('Không thể tải đơn hàng')
+      console.error('❌ [Orders Page] Fatal error:', err)
+      setError('Lỗi nghiêm trọng: ' + err.message)
+      setOrders([])
     } finally {
       setLoading(false)
     }
@@ -44,10 +77,26 @@ export default function DonHangPage() {
 
   const fetchStats = async () => {
     try {
-      const response = await orderService.getStats()
-      setStats(response)
-    } catch (err) {
-      console.error('Error fetching stats:', err)
+      console.log('📊 [Orders Page] Fetching stats...')
+      
+      try {
+        const response = await orderService.getStats()
+        console.log('✅ [Orders Page] Stats fetched from API:', response)
+        setStats(response)
+      } catch (apiErr) {
+        console.warn('⚠️ [Orders Page] Stats API không khả dụng, dùng giá trị mặc định')
+        
+        // Backend chưa có API, dùng stats mặc định
+        setStats({
+          total: orders.length,
+          pending: orders.filter(o => o.status === 'PENDING').length,
+          inProgress: orders.filter(o => o.status === 'IN_PROGRESS').length,
+          completed: orders.filter(o => o.status === 'COMPLETED').length,
+          cancelled: orders.filter(o => o.status === 'CANCELLED').length
+        })
+      }
+    } catch (err: any) {
+      console.error('❌ [Orders Page] Error fetching stats:', err)
     }
   }
 
@@ -144,9 +193,9 @@ export default function DonHangPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-10">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
+      {/* Header - Fixed */}
+      <div className="bg-white shadow-sm flex-shrink-0">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-3">
@@ -253,22 +302,23 @@ export default function DonHangPage() {
         </div>
       </div>
 
-      {/* Orders List */}
-      <div className="max-w-6xl mx-auto px-4 py-4">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
+      {/* Orders List - Scrollable */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+              {error}
+            </div>
+          )}
 
-        {orders.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-            <div className="text-6xl mb-4">📦</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có đơn hàng</h3>
-            <p className="text-gray-500">Các đơn hàng của bạn sẽ xuất hiện ở đây</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
+          {orders.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+              <div className="text-6xl mb-4">📦</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có đơn hàng</h3>
+              <p className="text-gray-500">Các đơn hàng của bạn sẽ xuất hiện ở đây</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
             {orders.map((order) => (
               <div key={order.id} className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
                 <div className="p-4">
@@ -335,10 +385,11 @@ export default function DonHangPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-10">
+      {/* Bottom Navigation - Fixed */}
+      <div className="bg-white border-t border-gray-200 px-4 py-2 flex-shrink-0">
         <div className="max-w-md mx-auto flex justify-around">
           <button onClick={() => router.push('/home')} className="flex flex-col items-center p-2 text-gray-600">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -236,15 +236,25 @@ class QuoteService {
   /**
    * [Customer] Chấp nhận quote để mở chat
    */
-  async acceptQuoteForChat(quoteId: string): Promise<{ conversationId: string }> {
+  async acceptQuoteForChat(quoteId: string): Promise<{ conversationId?: string; message?: string }> {
+    console.log('📡 [QuoteService] Accepting quote:', quoteId)
+    
     const response = await authenticatedFetch(`/api/quotes/${quoteId}/accept-for-chat`, {
       method: 'POST'
     })
+    
+    console.log('📡 [QuoteService] Response status:', response.status)
+    
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Failed to accept quote')
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+      console.error('❌ [QuoteService] Accept quote failed:', error)
+      throw new Error(error.error || error.message || 'Không thể chấp nhận báo giá')
     }
-    return response.json()
+    
+    const data = await response.json()
+    console.log('✅ [QuoteService] Accept quote success:', data)
+    
+    return data
   }
 
   /**
@@ -266,15 +276,26 @@ class QuoteService {
    * [Customer] Từ chối quote
    */
   async rejectQuote(quoteId: string, reason?: string): Promise<Quote> {
+    console.log('📡 [QuoteService] Rejecting quote:', quoteId)
+    console.log('📡 [QuoteService] Reason:', reason || 'No reason')
+    
     const response = await authenticatedFetch(`/api/quotes/${quoteId}/reject`, {
       method: 'POST',
       body: JSON.stringify({ reason })
     })
+    
+    console.log('📡 [QuoteService] Response status:', response.status)
+    
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error || 'Failed to reject quote')
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+      console.error('❌ [QuoteService] Reject failed:', error)
+      throw new Error(error.error || error.message || 'Không thể từ chối báo giá')
     }
-    return response.json()
+    
+    const data = await response.json()
+    console.log('✅ [QuoteService] Reject success:', data)
+    
+    return data
   }
 
   /**

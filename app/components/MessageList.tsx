@@ -38,6 +38,13 @@ export default function MessageList({ messages, currentUserId }: MessageListProp
 
   const groupMessagesByDate = (messages: Message[]) => {
     const groups: { [key: string]: Message[] } = {}
+    
+    // Kiểm tra messages có phải array không
+    if (!Array.isArray(messages)) {
+      console.error('❌ MessageList: messages is not an array:', messages)
+      return groups
+    }
+    
     messages.forEach((message) => {
       const date = new Date(message.createdAt).toDateString()
       if (!groups[date]) {

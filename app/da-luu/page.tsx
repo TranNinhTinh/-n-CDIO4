@@ -3,103 +3,99 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AuthService } from '@/lib/api/auth.service'
+import { PostService } from '@/lib/api/post.service'
 import Image from 'next/image'
 import Link from 'next/link'
+import SkeletonPost from '@/app/components/SkeletonPost'
 
 interface SavedPost {
   id: string
   title: string
-  service: string
-  price: string
-  location: string
-  postedBy: string
-  postedAt: string
-  savedAt: string
+  description: string
+  location?: string
+  budget?: number
   status: string
-  urgent: boolean
+  urgent?: boolean
+  createdAt: string
+  customer?: any
+  imageUrl?: string
 }
-
-const MOCK_SAVED_POSTS: SavedPost[] = [
-  {
-    id: '1',
-    title: 'Cần thợ sửa điện nước tại quận 1',
-    service: 'Sửa chữa điện nước',
-    price: '500,000 - 1,000,000đ',
-    location: 'Quận 1, TP.HCM',
-    postedBy: 'Nguyễn Văn A',
-    postedAt: '2 giờ trước',
-    savedAt: '1 giờ trước',
-    status: 'Đang tìm thợ',
-    urgent: true
-  },
-  {
-    id: '2',
-    title: 'Tìm thợ sơn nhà 3 tầng',
-    service: 'Sơn nhà',
-    price: '15,000,000 - 20,000,000đ',
-    location: 'Quận 7, TP.HCM',
-    postedBy: 'Phạm Minh D',
-    postedAt: '5 giờ trước',
-    savedAt: '3 giờ trước',
-    status: 'Đang tìm thợ',
-    urgent: false
-  },
-  {
-    id: '3',
-    title: 'Cần thợ làm tủ bếp gỗ công nghiệp',
-    service: 'Mộc - Đồ gỗ',
-    price: 'Thỏa thuận (dự kiến 25-30 triệu)',
-    location: 'Quận Bình Thạnh, TP.HCM',
-    postedBy: 'Hoàng Thu E',
-    postedAt: '1 ngày trước',
-    savedAt: '1 ngày trước',
-    status: 'Đang tìm thợ',
-    urgent: false
-  },
-  {
-    id: '4',
-    title: 'Máy lạnh không lạnh, cần thợ kiểm tra',
-    service: 'Sửa điều hòa',
-    price: '200,000 - 400,000đ',
-    location: 'Ngũ Hành Sơn, Đà Nẵng',
-    postedBy: 'Phạm Minh Tuấn',
-    postedAt: '6 giờ trước',
-    savedAt: '2 ngày trước',
-    status: 'Đang tìm thợ',
-    urgent: false
-  },
-  {
-    id: '5',
-    title: 'Cần thợ lắp camera an ninh cho cửa hàng',
-    service: 'Lắp đặt camera',
-    price: '2,000,000 - 3,000,000đ',
-    location: 'Thanh Khê, Đà Nẵng',
-    postedBy: 'Đỗ Minh Châu',
-    postedAt: '2 ngày trước',
-    savedAt: '2 ngày trước',
-    status: 'Đang tìm thợ',
-    urgent: true
-  }
-]
 
 export default function SavedPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
-  const [savedPosts, setSavedPosts] = useState<SavedPost[]>(MOCK_SAVED_POSTS)
+  const [savedPosts, setSavedPosts] = useState<SavedPost[]>([])
+  const [allPosts, setAllPosts] = useState<any[]>([])
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'urgent'>('all')
 
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       if (!AuthService.isAuthenticated()) {
         router.push('/dang-nhap')
       } else {
+        // Load tất cả bài viết từ API (bao gồm cả logic load saved posts)
+        await loadAllPosts()
         setIsLoading(false)
       }
     }
     checkAuth()
   }, [router])
 
+  // Reload khi trang được focus (user quay lại từ trang khác)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('👀 Trang được focus lại, đang reload...')
+        loadAllPosts()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
+  const loadAllPosts = async () => {
+    try {
+      console.log('📚 Đang load tất cả bài viết...')
+      const posts = await PostService.getAllPosts()
+      console.log('📚 Đã load', posts.length, 'bài viết')
+      setAllPosts(posts)
+      
+      // Load saved posts ngay sau khi có allPosts
+      const saved = localStorage.getItem('savedPosts')
+      console.log('💾 localStorage savedPosts:', saved)
+      
+      if (saved) {
+        const savedIds = new Set(JSON.parse(saved))
+        console.log('💾 Danh sách ID đã lưu:', [...savedIds])
+        
+        // Lọc các bài viết đã lưu từ posts
+        const filtered = posts.filter(post => savedIds.has(post.id))
+        console.log('✅ Tìm thấy', filtered.length, 'bài viết đã lưu')
+        setSavedPosts(filtered)
+      } else {
+        console.log('⚠️ Không có bài viết nào được lưu trong localStorage')
+        setSavedPosts([])
+      }
+    } catch (error) {
+      console.error('❌ Không thể load bài viết:', error)
+    }
+  }
+
   const handleUnsave = (id: string) => {
+    // Xóa khỏi localStorage
+    try {
+      const saved = localStorage.getItem('savedPosts')
+      if (saved) {
+        const savedIds = new Set(JSON.parse(saved))
+        savedIds.delete(id)
+        localStorage.setItem('savedPosts', JSON.stringify([...savedIds]))
+      }
+    } catch (error) {
+      console.error('❌ Không thể xóa bài viết khỏi danh sách lưu:', error)
+    }
+    
+    // Xóa khỏi UI
     setSavedPosts(prev => prev.filter(post => post.id !== id))
   }
 
@@ -272,32 +268,29 @@ export default function SavedPage() {
                           <Link href={`/posts/${post.id}`} className="block hover:text-blue-600">
                             <h3 className="text-lg font-semibold text-gray-900 mb-2">{post.title}</h3>
                           </Link>
-                          <div className="flex items-center gap-2 text-sm text-blue-600 mb-3">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                            </svg>
-                            <span>{post.service}</span>
-                          </div>
+                          <p className="text-sm text-gray-600 mb-3 line-clamp-2">{post.description}</p>
+                          
                           <div className="space-y-2 text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
-                              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="font-semibold text-green-600">{post.price}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              </svg>
-                              <span>{post.location}</span>
-                            </div>
+                            {post.budget && (
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="font-semibold text-green-600">{post.budget.toLocaleString('vi-VN')}đ</span>
+                              </div>
+                            )}
+                            {post.location && (
+                              <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                </svg>
+                                <span>{post.location}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 text-xs">
-                              <span>Đăng bởi: <strong>{post.postedBy}</strong></span>
+                              <span>Đăng bởi: <strong>{post.customer?.fullName || 'Ẩn danh'}</strong></span>
                               <span>•</span>
-                              <span>{post.postedAt}</span>
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Đã lưu {post.savedAt}
+                              <span>{new Date(post.createdAt).toLocaleDateString('vi-VN')}</span>
                             </div>
                           </div>
                         </div>

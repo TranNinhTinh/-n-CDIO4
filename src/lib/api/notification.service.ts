@@ -154,16 +154,24 @@ class NotificationService {
    * Xóa tất cả thông báo đã đọc
    */
   async deleteAllRead(): Promise<{ message: string }> {
+    console.log('🗑️ [Service] Calling DELETE /api/notifications/read')
+    
     const response = await authenticatedFetch('/api/notifications/read', {
       method: 'DELETE'
     })
     
+    console.log('🗑️ [Service] Response status:', response.status)
+    console.log('🗑️ [Service] Response ok:', response.ok)
+    
     if (!response.ok) {
       const error = await response.json()
+      console.error('🗑️ [Service] Error response:', error)
       throw new Error(error.error || 'Failed to delete all read')
     }
     
-    return response.json()
+    const result = await response.json()
+    console.log('🗑️ [Service] Success response:', result)
+    return result
   }
 }
 

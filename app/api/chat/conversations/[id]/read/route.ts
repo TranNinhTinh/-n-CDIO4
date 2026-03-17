@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-variably-justa.ngrok-free.dev/api/v1'
+
 // POST /api/chat/conversations/[id]/read - Đánh dấu tin nhắn đã đọc
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
+    const authHeader = request.headers.get('authorization')
     
-    if (!token) {
+    if (!authHeader) {
       return NextResponse.json(
         { message: 'Unauthorized' },
         { status: 401 }
@@ -17,13 +19,28 @@ export async function POST(
 
     const { id } = params
 
-    // Trong production, cập nhật tất cả tin nhắn trong conversation thành đã đọc
-    // await markConversationAsRead(id)
+    console.log('🔔 [Mark As Read] Calling backend API...', id)
 
-    return NextResponse.json(
-      { message: 'Marked as read successfully' },
-      { status: 200 }
-    )
+    const response = await fetch(`${API_BASE_URL}/chat/conversations/${id}/read`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      }
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      console.error('❌ [Mark As Read] Error:', data)
+      return NextResponse.json(
+        { message: data.message || 'Failed to mark as read' },
+        { status: response.status }
+      )
+    }
+
+    return NextResponse.json(data, { status: 200 })
   } catch (error) {
     console.error('Error marking as read:', error)
     return NextResponse.json(

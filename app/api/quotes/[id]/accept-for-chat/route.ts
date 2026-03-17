@@ -43,10 +43,21 @@ export async function POST(
     console.log('🔔 [Accept Quote] Full response:', JSON.stringify(data, null, 2))
 
     if (!response.ok) {
-      console.error('❌ [Accept Quote] Error:', data)
+      console.error('❌ [Accept Quote] Backend error:', data)
+      console.error('❌ [Accept Quote] Status:', response.status)
+      console.error('❌ [Accept Quote] Error message:', data.error || data.message)
+      
+      // Trả về lỗi với thông tin chi tiết, nhưng KHÔNG chặn frontend tạo conversation
       return NextResponse.json(
-        { error: data.error || 'Failed to accept quote' },
-        { status: response.status }
+        { 
+          success: false,
+          error: data.error || data.message || 'Backend failed to accept quote',
+          statusCode: response.status,
+          canRetry: true,
+          // Vẫn cho phép frontend tiếp tục tạo conversation
+          allowConversationCreation: true
+        },
+        { status: 200 } // Trả 200 để frontend xử lý tiếp
       )
     }
 
@@ -61,6 +72,7 @@ export async function POST(
 
     // Trả về response chuẩn với conversationId ở top level
     return NextResponse.json({
+      success: true,
       ...data,
       conversationId: conversationId
     }, { status: 200 })

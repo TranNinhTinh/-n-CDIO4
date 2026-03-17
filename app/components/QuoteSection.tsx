@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { quoteService, type Quote } from '@/lib/api/quote.service'
 import { chatService } from '@/lib/api/chat.service'
+import { orderService } from '@/lib/api/order.service'
 import { useRouter } from 'next/navigation'
 
 interface QuoteSectionProps {
@@ -66,25 +67,84 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
   }
 
   const handleAcceptQuote = async (quoteId: string) => {
-    if (!confirm('Bạn muốn chấp nhận báo giá này để mở chat?')) return
+    if (!confirm('Bạn muốn chấp nhận báo giá này?\n\n✅ Hệ thống sẽ tự động:\n- Tạo đơn hàng\n- Mở chat với người thợ')) return
     
     try {
+      console.log('📤 [QuoteSection] Accepting quote:', quoteId)
+      
+      // Step 1: Accept quote
       const response = await quoteService.acceptQuoteForChat(quoteId)
-      alert('Đã chấp nhận báo giá! Chuyển đến chat...')
+      console.log('✅ [QuoteSection] Quote accepted:', response)
+      
+      // Step 2: Tạo đơn hàng
+      let orderCreated = false
+      let orderNumber = null
+      
+      try {
+        console.log('📦 [QuoteSection] Creating order from quote...')
+        const orderResponse = await orderService.confirmFromQuote(quoteId)
+        console.log('✅ [QuoteSection] Order created:', orderResponse)
+        orderCreated = true
+        orderNumber = orderResponse.orderNumber
+      } catch (orderErr: any) {
+        console.error('❌ [QuoteSection] Failed to create order:', orderErr)
+        
+        if (orderErr.message.includes('400') || orderErr.message.includes('Bad Request')) {
+          console.warn('⚠️ [QuoteSection] Backend chưa hỗ trợ API tạo đơn hàng')
+        } else {
+          console.warn('⚠️ [QuoteSection] Order creation failed, but continuing to chat')
+        }
+      }
+      
+      // Thông báo kết quả
+      let message = '✅ Đã chấp nhận báo giá!\n\n'
+      
+      if (orderCreated && orderNumber) {
+        message += `📦 Đơn hàng #${orderNumber} đã được tạo!\n`
+        message += '👉 Xem chi tiết trong trang "Đơn hàng"\n\n'
+      } else {
+        message += '⚠️ Lưu ý: Hệ thống đơn hàng đang trong giai đoạn phát triển.\n'
+        message += '💬 Bạn có thể chat với người thợ để thảo luận chi tiết.\n\n'
+      }
+      
+      message += '💬 Chuyển đến trang tin nhắn...'
+      
+      alert(message)
       router.push('/tin-nhan')
     } catch (err: any) {
+      console.error('❌ [QuoteSection] Accept quote error:', err)
       alert(err.message || 'Không thể chấp nhận báo giá')
     }
   }
 
   const handleRejectQuote = async (quoteId: string) => {
-    const reason = prompt('Lý do từ chối:')
-    if (!reason) return
+    const reason = prompt('Lý do từ chối (tùy chọn):')
+    
+    // Nếu user cancel prompt
+    if (reason === null) {
+      console.log('ℹ️ User cancelled reject')
+      return
+    }
     
     try {
-      await quoteService.rejectQuote(quoteId, reason)
+      console.log('\n📝 [QuoteSection] Rejecting quote:', quoteId)
+      console.log('📝 [QuoteSection] Reason:', reason || 'No reason')
+      
+      await quoteService.rejectQuote(quoteId, reason || undefined)
+      
+      console.log('✅ [QuoteSection] Quote rejected successfully')
+      console.log('✅ [QuoteSection] Provider will receive notification')
+      
+      // Thông báo thành công
+      alert(
+        '✅ Đã từ chối báo giá!\n\n' +
+        '🔔 Người thợ sẽ nhận được thông báo từ chối' +
+        (reason ? `\n📝 Lý do: "${reason}"` : '')
+      )
+      
       loadQuotes()
     } catch (err: any) {
+      console.error('❌ [QuoteSection] Reject error:', err)
       alert(err.message || 'Không thể từ chối báo giá')
     }
   }

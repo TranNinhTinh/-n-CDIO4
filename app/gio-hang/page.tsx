@@ -3,51 +3,42 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { AuthService } from '@/lib/api/auth.service'
+import { quoteService, type Quote } from '@/lib/api/quote.service'
+import { orderService } from '@/lib/api/order.service'
 
 export default function GioHangPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
+  const [quotes, setQuotes] = useState<Quote[]>([])
+  const [error, setError] = useState('')
 
-  // Kiểm tra authentication
+  // Kiểm tra authentication và load quotes đã chấp nhận
   useEffect(() => {
-    const checkAuth = () => {
-      if (!AuthService.isAuthenticated()) {
-        router.push('/dang-nhap')
-      } else {
-        setIsLoading(false)
-      }
+    if (!AuthService.isAuthenticated()) {
+      router.push('/dang-nhap')
+      return
     }
-    checkAuth()
+    
+    loadAcceptedQuotes()
   }, [router])
 
-  // Dữ liệu giỏ hàng
-  const [cartItems, setCartItems] = useState([
-    {
-      id: 1,
-      serviceName: 'Sửa chữa điện',
-      workerName: 'Thợ Điện Minh',
-      price: 250000,
-      date: '20/11/2025',
-      time: '14:00',
-      location: 'Hải Châu, Đà Nẵng',
-      status: 'pending',
-      description: 'Mất điện toàn bộ đường Lê Duẩn. Cần sửa gấp.',
-      avatar: '⚡',
-      avatarColor: 'bg-orange-500'
-    },
-    {
-      id: 2,
-      serviceName: 'Sửa ống nước',
-      workerName: 'Thợ Sen Phát',
-      price: 180000,
-      date: '21/11/2025',
-      time: '09:00',
-      location: 'Thanh Khê, Đà Nẵng',
-      status: 'confirmed',
-      description: 'Ống nước bị rò rỉ dưới bồn rửa chén.',
-      avatar: '🔧',
+  const loadAcceptedQuotes = async () => {
+    try {
+      setIsLoading(true)
+      // Load các quote đã chấp nhận (status = ACCEPTED hoặc IN_CHAT)
+      const allQuotes = await quoteService.getMyQuotes({ limit: 50 })
+      const acceptedQuotes = allQuotes.filter((q: Quote) => 
+        q.status === 'ACCEPTED' || q.status === 'IN_CHAT'
+      )
+      setQuotes(acceptedQuotes)
+    } catch (err: any) {
+      console.error('Error loading quotes:', err)
+      setError('Không thể tải danh sách báo giá')
+    } finally {
+      setIsLoading(false)
+    }
+  }
       avatarColor: 'bg-blue-500'
     },
     {

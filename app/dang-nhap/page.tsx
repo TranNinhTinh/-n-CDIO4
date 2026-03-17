@@ -78,42 +78,44 @@ export default function DangNhap() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-cyan-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full transform transition-all duration-300 hover:shadow-3xl">
         {/* Phần đầu trang */}
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
+          <div className="flex justify-center mb-4 animate-fade-in">
             <ThoTotLogo className="w-56 md:w-64" />
           </div>
-          <p className="text-gray-600 text-sm">Kết nối khách hàng và thợ chuyên nghiệp</p>
+          <p className="text-gray-600 text-sm font-medium">Kết nối khách hàng và thợ chuyên nghiệp</p>
         </div>
 
         {/* Tiêu đề */}
-        <h2 className="text-xl font-bold text-center text-gray-800 mb-6">Đăng nhập</h2>
+        <h2 className="text-2xl font-bold text-center bg-gradient-to-r from-teal-600 to-blue-600 bg-clip-text text-transparent mb-6">
+          Đăng nhập
+        </h2>
 
         {/* Chuyển đổi loại đăng nhập */}
-        <div className="flex rounded-lg bg-gray-100 p-1 mb-6">
+        <div className="flex rounded-xl bg-gradient-to-r from-gray-50 to-gray-100 p-1.5 mb-6 shadow-inner">
           <button
             type="button"
             onClick={() => setLoginType('email')}
-            className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition duration-200 ${
+            className={`flex-1 py-3 px-4 rounded-lg font-semibold text-sm transition-all duration-300 transform ${
               loginType === 'email'
-                ? 'bg-white text-gray-800 shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'bg-gradient-to-r from-teal-500 to-blue-500 text-white shadow-lg scale-105'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-white/50'
             }`}
           >
-            Email
+            📧 Email
           </button>
           <button
             type="button"
             onClick={() => setLoginType('phone')}
-            className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition duration-200 ${
+            className={`flex-1 py-3 px-4 rounded-lg font-semibold text-sm transition-all duration-300 transform ${
               loginType === 'phone'
-                ? 'bg-white text-gray-800 shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'bg-gradient-to-r from-teal-500 to-blue-500 text-white shadow-lg scale-105'
+                : 'text-gray-600 hover:text-gray-800 hover:bg-white/50'
             }`}
           >
-            Số điện thoại
+            📱 Số điện thoại
           </button>
         </div>
 
@@ -121,71 +123,90 @@ export default function DangNhap() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Hiển thị lỗi nếu có */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
+            <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm animate-shake shadow-md">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>{error}</span>
+              </div>
             </div>
           )}
 
           {loginType === 'email' ? (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
+            <div className="transform transition-all duration-300">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                📧 Email
               </label>
-              <input
-                type="email"
-                value={formData.identifier}
-                onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                placeholder="Nhập email đã đăng ký"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">Sử dụng email bạn đã đăng ký tài khoản</p>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={formData.identifier}
+                  onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
+                  className="w-full px-4 py-3 pl-10 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all duration-300 hover:border-gray-400"
+                  placeholder="Nhập email đã đăng ký"
+                  required
+                />
+                <span className="absolute left-3 top-3.5 text-gray-400">✉️</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5 ml-1">Sử dụng email bạn đã đăng ký tài khoản</p>
             </div>
           ) : (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Số điện thoại
+            <div className="transform transition-all duration-300">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                📱 Số điện thoại
               </label>
-              <input
-                type="tel"
-                value={formData.identifier}
-                onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                placeholder="Nhập số điện thoại đã đăng ký"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
+              <div className="relative">
+                <input
+                  type="tel"
+                  value={formData.identifier}
+                  onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
+                  className="w-full px-4 py-3 pl-10 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all duration-300 hover:border-gray-400"
+                  placeholder="Nhập số điện thoại đã đăng ký"
+                  required
+                />
+                <span className="absolute left-3 top-3.5 text-gray-400">📞</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1.5 ml-1">
                 Nhập số điện thoại bạn đã dùng khi đăng ký (ví dụ: 0129477565)
               </p>
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mật khẩu
+          <div className="transform transition-all duration-300">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              🔒 Mật khẩu
             </label>
-            <input
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-              placeholder="Mật khẩu"
-              required
-            />
+            <div className="relative">
+              <input
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className="w-full px-4 py-3 pl-10 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all duration-300 hover:border-gray-400"
+                placeholder="Nhập mật khẩu"
+                required
+              />
+              <span className="absolute left-3 top-3.5 text-gray-400">🔐</span>
+            </div>
           </div>
 
           {/* Ghi nhớ đăng nhập & Quên mật khẩu */}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center">
+          <div className="flex items-center justify-between pt-2">
+            <label className="flex items-center cursor-pointer group">
               <input
                 type="checkbox"
                 checked={formData.rememberMe}
                 onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
-                className="w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-teal-500 border-gray-300 rounded focus:ring-teal-500 cursor-pointer"
               />
-              <span className="ml-2 text-sm text-gray-600">Ghi nhớ đăng nhập</span>
+              <span className="ml-2 text-sm text-gray-600 group-hover:text-gray-800 transition">
+                Ghi nhớ đăng nhập
+              </span>
             </label>
-            <Link href="/quen-mat-khau" className="text-sm text-blue-500 hover:text-blue-600">
+            <Link 
+              href="/quen-mat-khau" 
+              className="text-sm text-teal-600 hover:text-teal-700 font-medium transition-colors duration-200 hover:underline"
+            >
               Quên mật khẩu?
             </Link>
           </div>
@@ -193,25 +214,35 @@ export default function DangNhap() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 mt-6 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-teal-500 to-blue-500 hover:from-teal-600 hover:to-blue-600 text-white font-bold py-3.5 px-6 rounded-xl transition-all duration-300 mt-6 disabled:from-gray-400 disabled:to-gray-400 disabled:cursor-not-allowed transform hover:scale-105 hover:shadow-lg active:scale-95"
           >
-            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            {loading ? (
+              <span className="flex items-center justify-center">
+                <svg className="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Đang đăng nhập...
+              </span>
+            ) : (
+              '🚀 Đăng nhập'
+            )}
           </button>
         </form>
 
         {/* Đường phân cách */}
-        <div className="flex items-center my-6">
-          <div className="flex-1 border-t border-gray-300"></div>
-          <span className="px-4 text-sm text-gray-500">Hoặc</span>
-          <div className="flex-1 border-t border-gray-300"></div>
+        <div className="flex items-center my-8">
+          <div className="flex-1 border-t-2 border-gray-200"></div>
+          <span className="px-4 text-sm font-semibold text-gray-500">Hoặc</span>
+          <div className="flex-1 border-t-2 border-gray-200"></div>
         </div>
 
         {/* Đăng nhập bằng Google */}
         <button
           onClick={handleGoogleLogin}
-          className="w-full bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-medium py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center space-x-2"
+          className="w-full bg-white hover:bg-gray-50 border-2 border-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-all duration-300 flex items-center justify-center space-x-3 transform hover:scale-105 hover:shadow-lg active:scale-95 hover:border-gray-400"
         >
-          <svg className="w-5 h-5" viewBox="0 0 24 24">
+          <svg className="w-6 h-6" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -221,10 +252,10 @@ export default function DangNhap() {
         </button>
 
         {/* Chân trang */}
-        <div className="mt-6 text-center text-sm text-gray-600">
-          Chưa có tài khoản?{' '}
-          <Link href="/dang-ky" className="text-blue-500 hover:text-blue-600 font-medium">
-            Đăng ký
+        <div className="mt-8 text-center text-sm">
+          <span className="text-gray-600">Chưa có tài khoản? </span>
+          <Link href="/dang-ky" className="text-teal-600 hover:text-teal-700 font-bold transition-colors duration-200 hover:underline">
+            Đăng ký ngay
           </Link>
         </div>
       </div>
