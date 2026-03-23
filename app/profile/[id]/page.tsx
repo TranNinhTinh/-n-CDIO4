@@ -31,8 +31,17 @@ export default function PublicProfile() {
             const data = await ProfileService.getPublicProfile(userId)
             setProfile(data)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load profile')
+            const errorMsg = err instanceof Error ? err.message : 'Failed to load profile'
             console.error('Error loading profile:', err)
+            
+            // Check for specific errors
+            if (errorMsg.includes('Invalid UUID')) {
+                setError('❌ Invalid user ID format')
+            } else if (errorMsg.includes('notfound') || errorMsg.includes('inactive')) {
+                setError('❌ User not found or account inactive')
+            } else {
+                setError(errorMsg)
+            }
         } finally {
             setLoading(false)
         }

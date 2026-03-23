@@ -4,77 +4,237 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AuthService } from '@/lib/api/auth.service'
-import { quoteService, type Quote } from '@/lib/api/quote.service'
-import { orderService } from '@/lib/api/order.service'
+import { quoteService, type Quote, type QuoteWithRevisions } from '@/lib/api/quote.service'
+import { PostService } from '@/lib/api/post.service'
+
+type QuoteWithPost = {
+  quote: Quote
+  post: any | null
+}
 
 export default function GioHangPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
-  const [quotes, setQuotes] = useState<Quote[]>([])
+  const [quotedPosts, setQuotedPosts] = useState<QuoteWithPost[]>([])
   const [error, setError] = useState('')
+  const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null)
+  const [selectedRevisions, setSelectedRevisions] = useState<QuoteWithRevisions['revisions']>([])
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null)
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
 
-  // Kiểm tra authentication và load quotes đã chấp nhận
+  const formatDateTime = (isoDate?: string) => {
+    if (!isoDate) return 'Không rõ thời gian'
+    const date = new Date(isoDate)
+    if (Number.isNaN(date.getTime())) return 'Không rõ thời gian'
+
+    return date.toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  const getStatusLabel = (status: Quote['status']) => {
+    switch (status) {
+      case 'PENDING':
+        return 'Đang chờ phản hồi'
+      case 'ACCEPTED':
+        return 'Đã được chấp nhận'
+      case 'IN_CHAT':
+        return 'Đang trao đổi'
+      case 'REJECTED':
+        return 'Đã bị từ chối'
+      case 'CANCELLED':
+        return 'Đã hủy'
+      default:
+        return status
+    }
+  }
+
+  const getStatusClassName = (status: Quote['status']) => {
+    switch (status) {
+      case 'PENDING':
+        return 'bg-amber-100 text-amber-700'
+      case 'ACCEPTED':
+        return 'bg-emerald-100 text-emerald-700'
+      case 'IN_CHAT':
+        return 'bg-cyan-100 text-cyan-700'
+      case 'REJECTED':
+        return 'bg-rose-100 text-rose-700'
+      case 'CANCELLED':
+        return 'bg-slate-100 text-slate-600'
+      default:
+        return 'bg-slate-100 text-slate-700'
+    }
+  }
+
+  const loadMyQuotedPosts = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+
+      const quoteResponse: any = await quoteService.getMyQuotes({ limit: 100 })
+      const allQuotes: Quote[] = Array.isArray(quoteResponse)
+        ? quoteResponse
+        : Array.isArray(quoteResponse?.data)
+          ? quoteResponse.data
+          : []
+
+      const latestQuoteByPost = new Map<string, Quote>()
+
+      for (const quote of allQuotes) {
+        const existing = latestQuoteByPost.get(quote.postId)
+        if (!existing) {
+          latestQuoteByPost.set(quote.postId, quote)
+          continue
+        }
+
+        const existingTime = new Date(existing.updatedAt || existing.createdAt).getTime()
+        const currentTime = new Date(quote.updatedAt || quote.createdAt).getTime()
+        if (currentTime > existingTime) {
+          latestQuoteByPost.set(quote.postId, quote)
+        }
+      }
+
+      const latestQuotes = Array.from(latestQuoteByPost.values()).sort(
+        (a, b) =>
+          new Date(b.updatedAt || b.createdAt).getTime() -
+          new Date(a.updatedAt || a.createdAt).getTime(),
+      )
+
+      const postEntries = await Promise.all(
+        latestQuotes.map(async (quote) => {
+          try {
+            const post = await PostService.getPostById(quote.postId)
+            return [quote.postId, post] as const
+          } catch (postError) {
+            console.warn('Không tải được bài đăng:', quote.postId, postError)
+            return [quote.postId, null] as const
+          }
+        }),
+      )
+
+      const postMap = new Map(postEntries)
+
+      const items: QuoteWithPost[] = latestQuotes.map((quote) => ({
+        quote,
+        post: postMap.get(quote.postId) || null,
+      }))
+
+      setQuotedPosts(items)
+    } catch (err: any) {
+      console.error('Error loading quoted posts:', err)
+      setError(err?.message || 'Không thể tải danh sách bài đã chào giá')
+      setQuotedPosts([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleViewQuoteDetail = async (quoteId: string) => {
+    try {
+      setLoadingDetailId(quoteId)
+      const detail = await quoteService.getQuoteById(quoteId)
+      setSelectedQuote(detail)
+      setSelectedRevisions([])
+    } catch (err: any) {
+      alert(err?.message || 'Không thể tải chi tiết báo giá')
+    } finally {
+      setLoadingDetailId(null)
+    }
+  }
+
+  const handleViewQuoteRevisions = async (quoteId: string) => {
+    try {
+      setLoadingDetailId(quoteId)
+      const detail = await quoteService.getQuoteWithRevisions(quoteId)
+      setSelectedQuote(detail)
+      setSelectedRevisions(detail.revisions || [])
+    } catch (err: any) {
+      alert(err?.message || 'Không thể tải lịch sử chào giá')
+    } finally {
+      setLoadingDetailId(null)
+    }
+  }
+
+  const handleUpdateQuote = async (quote: Quote) => {
+    const rawPrice = prompt('Nhập giá mới (VND):', String(quote.price))
+    if (!rawPrice) return
+
+    const parsedPrice = Number(rawPrice.replace(/[^0-9]/g, ''))
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      alert('Giá không hợp lệ')
+      return
+    }
+
+    const newDescription = prompt('Nhập mô tả mới:', quote.description || '')
+    if (newDescription === null) return
+
+    try {
+      setActionLoadingId(quote.id)
+      await quoteService.updateQuote(quote.id, {
+        postId: quote.postId,
+        price: parsedPrice,
+        description: newDescription.trim() || quote.description,
+        estimatedDuration: quote.estimatedDuration,
+      })
+      await loadMyQuotedPosts()
+      alert('Đã cập nhật báo giá')
+    } catch (err: any) {
+      alert(err?.message || 'Không thể cập nhật báo giá')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleCancelQuote = async (quoteId: string) => {
+    const reason = prompt('Lý do hủy báo giá (không bắt buộc):')
+    if (reason === null) return
+
+    try {
+      setActionLoadingId(quoteId)
+      await quoteService.cancelQuote(quoteId, reason || undefined)
+      await loadMyQuotedPosts()
+      alert('Đã hủy báo giá')
+    } catch (err: any) {
+      alert(err?.message || 'Không thể hủy báo giá')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  const handleDeleteQuote = async (quoteId: string) => {
+    if (!confirm('Bạn chắc chắn muốn xóa báo giá này?')) return
+
+    try {
+      setActionLoadingId(quoteId)
+      await quoteService.deleteQuote(quoteId)
+      await loadMyQuotedPosts()
+      alert('Đã xóa báo giá')
+    } catch (err: any) {
+      alert(err?.message || 'Không thể xóa báo giá')
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  // Kiểm tra authentication và load danh sách bài đã chào giá
   useEffect(() => {
     if (!AuthService.isAuthenticated()) {
       router.push('/dang-nhap')
       return
     }
-    
-    loadAcceptedQuotes()
+
+    loadMyQuotedPosts()
   }, [router])
-
-  const loadAcceptedQuotes = async () => {
-    try {
-      setIsLoading(true)
-      // Load các quote đã chấp nhận (status = ACCEPTED hoặc IN_CHAT)
-      const allQuotes = await quoteService.getMyQuotes({ limit: 50 })
-      const acceptedQuotes = allQuotes.filter((q: Quote) => 
-        q.status === 'ACCEPTED' || q.status === 'IN_CHAT'
-      )
-      setQuotes(acceptedQuotes)
-    } catch (err: any) {
-      console.error('Error loading quotes:', err)
-      setError('Không thể tải danh sách báo giá')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-      avatarColor: 'bg-blue-500'
-    },
-    {
-      id: 3,
-      serviceName: 'Làm tủ bếp',
-      workerName: 'Thợ Mộc Tuấn',
-      price: 3500000,
-      date: '25/11/2025',
-      time: '08:00',
-      location: 'Sơn Trà, Đà Nẵng',
-      status: 'pending',
-      description: 'Làm tủ bếp gỗ công nghiệp cao cấp, thiết kế hiện đại.',
-      avatar: '🔨',
-      avatarColor: 'bg-yellow-600'
-    }
-  ])
-
-  // Xóa item khỏi giỏ hàng
-  const removeItem = (id: number) => {
-    setCartItems(cartItems.filter(item => item.id !== id))
-  }
-
-  // Tính tổng tiền
-  const totalAmount = cartItems.reduce((sum, item) => sum + item.price, 0)
-
-  // Phí dịch vụ (3%)
-  const serviceFee = Math.round(totalAmount * 0.03)
-
-  // Tổng thanh toán
-  const finalAmount = totalAmount + serviceFee
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Đang tải...</p>
         </div>
       </div>
@@ -82,7 +242,7 @@ export default function GioHangPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -93,217 +253,197 @@ export default function GioHangPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </Link>
-              <h1 className="text-2xl font-bold text-gray-900">Giỏ hàng của bạn</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Chào giá của tôi</h1>
             </div>
-            <Link href="/home">
-              <Image
-                src="/logo.png"
-                alt="Thợ Tốt"
-                width={80}
-                height={63}
-                className="object-contain"
-              />
-            </Link>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {cartItems.length === 0 ? (
-          // Giỏ hàng trống
-          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-            <svg className="w-24 h-24 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {error && (
+          <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700 text-sm">
+            {error}
+          </div>
+        )}
+
+        {selectedQuote && (
+          <div className="mb-6 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-cyan-900">Chi tiết báo giá đã chọn</h3>
+                <p className="text-sm text-cyan-700 mt-1">Mã báo giá: {selectedQuote.id}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedQuote(null)
+                  setSelectedRevisions([])
+                }}
+                className="px-3 py-1.5 text-xs rounded-lg bg-white text-cyan-700 border border-cyan-200 hover:bg-cyan-100"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg bg-white border border-cyan-100 p-3">
+                <div className="text-cyan-700">Giá hiện tại</div>
+                <div className="font-semibold text-cyan-900 mt-1">{Number(selectedQuote.price || 0).toLocaleString('vi-VN')}đ</div>
+              </div>
+              <div className="rounded-lg bg-white border border-cyan-100 p-3">
+                <div className="text-cyan-700">Trạng thái</div>
+                <div className="font-semibold text-cyan-900 mt-1">{getStatusLabel(selectedQuote.status)}</div>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-lg bg-white border border-cyan-100 p-3 text-sm text-slate-700">
+              {selectedQuote.description || 'Không có mô tả'}
+            </div>
+
+            {selectedRevisions.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-cyan-900 mb-2">Lịch sử chỉnh sửa ({selectedRevisions.length})</p>
+                <div className="space-y-2">
+                  {selectedRevisions.map((revision) => (
+                    <div key={revision.id} className="rounded-lg bg-white border border-cyan-100 p-3 text-sm">
+                      <div className="font-medium text-slate-800">{Number(revision.price || 0).toLocaleString('vi-VN')}đ</div>
+                      <div className="text-slate-600 mt-1">{revision.description || 'Không có mô tả'}</div>
+                      <div className="text-xs text-slate-500 mt-1">{formatDateTime(revision.createdAt)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {quotedPosts.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
+            <svg className="w-20 h-20 mx-auto text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <h2 className="text-2xl font-semibold text-gray-700 mb-2">Giỏ hàng trống</h2>
-            <p className="text-gray-500 mb-6">Bạn chưa có yêu cầu nào đang chờ xử lý</p>
-            <Link 
+            <h2 className="text-2xl font-semibold text-slate-700 mb-2">Bạn chưa chào giá bài nào</h2>
+            <p className="text-slate-500 mb-6">Hãy vào danh sách bài đăng để gửi chào giá đầu tiên.</p>
+            <Link
               href="/home"
-              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              className="inline-flex items-center px-6 py-3 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 transition"
             >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              Tìm kiếm dịch vụ
+              Về trang chủ
             </Link>
           </div>
         ) : (
-          // Giỏ hàng có sản phẩm
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Danh sách items */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="bg-white rounded-lg shadow-sm p-4">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                  Yêu cầu đang xử lý ({cartItems.length})
-                </h2>
-              </div>
-
-              {cartItems.map(item => (
-                <div key={item.id} className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition">
-                  <div className="flex items-start space-x-4">
-                    {/* Avatar */}
-                    <div className={`w-16 h-16 ${item.avatarColor} rounded-lg flex items-center justify-center text-3xl flex-shrink-0`}>
-                      {item.avatar}
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Header */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">{item.serviceName}</h3>
-                          <p className="text-sm text-gray-600">{item.workerName}</p>
-                        </div>
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition"
-                          title="Xóa"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-
-                      {/* Status */}
-                      <div className="mb-3">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                          item.status === 'confirmed' 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {item.status === 'confirmed' ? '✓ Đã xác nhận' : '⏳ Chờ xác nhận'}
-                        </span>
-                      </div>
-
-                      {/* Description */}
-                      <p className="text-sm text-gray-600 mb-3">{item.description}</p>
-
-                      {/* Details */}
-                      <div className="space-y-2">
-                        <div className="flex items-center text-sm text-gray-600">
-                          <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <span>{item.date} lúc {item.time}</span>
-                        </div>
-                        <div className="flex items-center text-sm text-gray-600">
-                          <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          </svg>
-                          <span>{item.location}</span>
-                        </div>
-                      </div>
-
-                      {/* Price */}
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600">Giá dịch vụ:</span>
-                          <span className="text-xl font-bold text-blue-600">
-                            {item.price.toLocaleString('vi-VN')}đ
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="mt-4 flex items-center space-x-3">
-                        <button className="flex-1 px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition text-sm font-medium">
-                          Liên hệ thợ
-                        </button>
-                        <button className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium">
-                          Xem chi tiết
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Danh sách bài đã chào giá ({quotedPosts.length})
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">Mỗi bài hiển thị chào giá mới nhất của bạn.</p>
             </div>
 
-            {/* Thanh toán */}
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow-sm p-6 sticky top-24">
-                <h2 className="text-lg font-semibold text-gray-900 mb-6">Tóm tắt đơn hàng</h2>
+            {quotedPosts.map(({ quote, post }) => {
+              const postTitle = post?.title || `Bài đăng #${quote.postId.slice(0, 8)}`
+              const postDescription = post?.description || quote.description
 
-                {/* Chi tiết giá */}
-                <div className="space-y-3 mb-6">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Tạm tính ({cartItems.length} dịch vụ)</span>
-                    <span className="text-gray-900 font-medium">{totalAmount.toLocaleString('vi-VN')}đ</span>
+              return (
+                <div key={quote.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">{postTitle}</h3>
+                      <p className="text-sm text-slate-500 mt-1">Mã bài đăng: {quote.postId}</p>
+                    </div>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusClassName(quote.status)}`}>
+                      {getStatusLabel(quote.status)}
+                    </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Phí dịch vụ (3%)</span>
-                    <span className="text-gray-900 font-medium">{serviceFee.toLocaleString('vi-VN')}đ</span>
-                  </div>
-                  <div className="border-t border-gray-200 pt-3">
-                    <div className="flex justify-between">
-                      <span className="text-base font-semibold text-gray-900">Tổng cộng</span>
-                      <span className="text-2xl font-bold text-blue-600">
-                        {finalAmount.toLocaleString('vi-VN')}đ
-                      </span>
+
+                  <p className="text-sm text-slate-700 mt-4 line-clamp-3">{postDescription}</p>
+
+                  <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-200">
+                      <div className="text-slate-500">Giá đã chào</div>
+                      <div className="text-base font-semibold text-cyan-700 mt-1">
+                        {Number(quote.price || 0).toLocaleString('vi-VN')}đ
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-200">
+                      <div className="text-slate-500">Cập nhật lần cuối</div>
+                      <div className="text-base font-medium text-slate-800 mt-1">{formatDateTime(quote.updatedAt || quote.createdAt)}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-200">
+                      <div className="text-slate-500">Thời gian dự kiến</div>
+                      <div className="text-base font-medium text-slate-800 mt-1">
+                        {quote.estimatedDuration ? `${quote.estimatedDuration} phút` : 'Chưa cập nhật'}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Mã giảm giá */}
-                <div className="mb-6">
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      placeholder="Nhập mã giảm giá"
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
-                    />
-                    <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition text-sm font-medium">
-                      Áp dụng
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Link
+                      href={`/posts/${quote.postId}`}
+                      className="inline-flex items-center px-4 py-2 rounded-xl bg-cyan-600 text-white hover:bg-cyan-700 transition text-sm font-medium"
+                    >
+                      Xem chi tiết bài đăng
+                    </Link>
+                    <Link
+                      href="/tin-nhan"
+                      className="inline-flex items-center px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 transition text-sm font-medium"
+                    >
+                      Vào tin nhắn
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleViewQuoteDetail(quote.id)}
+                      disabled={loadingDetailId === quote.id}
+                      className="inline-flex items-center px-4 py-2 rounded-xl border border-cyan-300 text-cyan-700 hover:bg-cyan-50 transition text-sm font-medium disabled:opacity-60"
+                    >
+                      {loadingDetailId === quote.id ? 'Đang tải...' : 'Chi tiết báo giá'}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => handleViewQuoteRevisions(quote.id)}
+                      disabled={loadingDetailId === quote.id}
+                      className="inline-flex items-center px-4 py-2 rounded-xl border border-sky-300 text-sky-700 hover:bg-sky-50 transition text-sm font-medium disabled:opacity-60"
+                    >
+                      {loadingDetailId === quote.id ? 'Đang tải...' : 'Lịch sử sửa giá'}
+                    </button>
+
+                    {quote.status === 'PENDING' && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateQuote(quote)}
+                        disabled={actionLoadingId === quote.id}
+                        className="inline-flex items-center px-4 py-2 rounded-xl border border-amber-300 text-amber-700 hover:bg-amber-50 transition text-sm font-medium disabled:opacity-60"
+                      >
+                        {actionLoadingId === quote.id ? 'Đang xử lý...' : 'Sửa báo giá'}
+                      </button>
+                    )}
+
+                    {(quote.status === 'PENDING' || quote.status === 'IN_CHAT') && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelQuote(quote.id)}
+                        disabled={actionLoadingId === quote.id}
+                        className="inline-flex items-center px-4 py-2 rounded-xl border border-rose-300 text-rose-700 hover:bg-rose-50 transition text-sm font-medium disabled:opacity-60"
+                      >
+                        {actionLoadingId === quote.id ? 'Đang xử lý...' : 'Hủy báo giá'}
+                      </button>
+                    )}
+
+                    {(quote.status === 'CANCELLED' || quote.status === 'REJECTED') && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteQuote(quote.id)}
+                        disabled={actionLoadingId === quote.id}
+                        className="inline-flex items-center px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 transition text-sm font-medium disabled:opacity-60"
+                      >
+                        {actionLoadingId === quote.id ? 'Đang xử lý...' : 'Xóa báo giá'}
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {/* Nút thanh toán */}
-                <button className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold text-base mb-4">
-                  Xác nhận đặt dịch vụ
-                </button>
-
-                {/* Thông tin bổ sung */}
-                <div className="space-y-3 pt-4 border-t border-gray-200">
-                  <div className="flex items-start space-x-2 text-xs text-gray-600">
-                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Thanh toán sau khi hoàn thành công việc</span>
-                  </div>
-                  <div className="flex items-start space-x-2 text-xs text-gray-600">
-                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Được hỗ trợ 24/7</span>
-                  </div>
-                  <div className="flex items-start space-x-2 text-xs text-gray-600">
-                    <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                    <span>Bảo hành chất lượng dịch vụ</span>
-                  </div>
-                </div>
-
-                {/* Phương thức thanh toán */}
-                <div className="mt-6 pt-4 border-t border-gray-200">
-                  <p className="text-xs text-gray-600 mb-3 font-medium">Phương thức thanh toán:</p>
-                  <div className="flex items-center space-x-2">
-                    <div className="flex items-center justify-center w-10 h-10 bg-gray-100 rounded">
-                      <span className="text-lg">💵</span>
-                    </div>
-                    <div className="flex items-center justify-center w-10 h-10 bg-gray-100 rounded">
-                      <span className="text-lg">💳</span>
-                    </div>
-                    <div className="flex items-center justify-center w-10 h-10 bg-gray-100 rounded">
-                      <span className="text-lg">🏦</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+              )
+            })}
           </div>
         )}
       </div>

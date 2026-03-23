@@ -29,6 +29,16 @@ interface Quote {
   status: string
 }
 
+const getNormalizedRole = (user?: User | null) =>
+  (user?.role || user?.accountType || '').toString().toUpperCase()
+
+const isCustomerRole = (user?: User | null) => getNormalizedRole(user) === 'CUSTOMER'
+
+const isProviderRole = (user?: User | null) => {
+  const role = getNormalizedRole(user)
+  return role === 'PROVIDER' || role === 'WORKER'
+}
+
 export default function TinNhanPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -106,8 +116,8 @@ export default function TinNhanPage() {
               ...conv,
               lastMessagePreview: data.message.content || 'File đính kèm',
               lastMessageAt: data.message.createdAt,
-              customerUnreadCount: selectedConversation?.id === data.conversationId && currentUser?.role === 'CUSTOMER' ? 0 : conv.customerUnreadCount,
-              providerUnreadCount: selectedConversation?.id === data.conversationId && currentUser?.role === 'PROVIDER' ? 0 : conv.providerUnreadCount
+              customerUnreadCount: selectedConversation?.id === data.conversationId && isCustomerRole(currentUser) ? 0 : conv.customerUnreadCount,
+              providerUnreadCount: selectedConversation?.id === data.conversationId && isProviderRole(currentUser) ? 0 : conv.providerUnreadCount
             }
           }
           return conv
@@ -198,7 +208,7 @@ export default function TinNhanPage() {
     markAsRead(selectedConversation.id)
 
     // Determine otherUser ID based on current user role
-    const isCustomer = currentUser?.role === 'CUSTOMER'
+    const isCustomer = isCustomerRole(currentUser)
     const otherUserId = isCustomer ? selectedConversation.providerId : selectedConversation.customerId
 
     console.log('👤 Loading other user profile:', otherUserId)
@@ -254,7 +264,21 @@ export default function TinNhanPage() {
       // Nếu có, tự động chọn conversation đó
       const conversationIdFromUrl = searchParams.get('conversation')
       if (conversationIdFromUrl && sortedData.length > 0) {
-        const targetConversation = sortedData.find(c => c.id === conversationIdFromUrl)
+        let targetConversation = sortedData.find(c => c.id === conversationIdFromUrl)
+
+        // Fallback: gọi API chi tiết nếu conversation chưa nằm trong danh sách hiện tại
+        if (!targetConversation) {
+          try {
+            targetConversation = await chatService.getConversationById(conversationIdFromUrl)
+            setConversations(prev => {
+              if (prev.some(c => c.id === targetConversation!.id)) return prev
+              return [targetConversation!, ...prev]
+            })
+          } catch (error) {
+            console.error('❌ Cannot load conversation by id:', conversationIdFromUrl, error)
+          }
+        }
+
         if (targetConversation) {
           console.log('💬 Auto-selecting conversation from URL:', conversationIdFromUrl)
           if (targetConversation.isClosed) {
@@ -326,7 +350,7 @@ export default function TinNhanPage() {
   const loadUserProfilesForConversations = async (convs: Conversation[]) => {
     if (!currentUser) return
 
-    const isCustomer = currentUser.role === 'CUSTOMER'
+    const isCustomer = isCustomerRole(currentUser)
     const userIdsToLoad = new Set<string>()
 
     // Collect all unique user IDs that need to be loaded
@@ -344,7 +368,7 @@ export default function TinNhanPage() {
         const loadedUsers: { [key: string]: User } = {}
 
         // Load each user profile
-        for (const userId of userIdsToLoad) {
+        for (const userId of Array.from(userIdsToLoad)) {
           try {
             const user = await ProfileService.getUserProfile(userId)
             console.log('✅ Loaded user:', userId, user)
@@ -392,8 +416,8 @@ export default function TinNhanPage() {
           if (conv.id === conversationId) {
             return {
               ...conv,
-              customerUnreadCount: currentUser?.role === 'CUSTOMER' ? 0 : conv.customerUnreadCount,
-              providerUnreadCount: currentUser?.role === 'PROVIDER' ? 0 : conv.providerUnreadCount
+              customerUnreadCount: isCustomerRole(currentUser) ? 0 : conv.customerUnreadCount,
+              providerUnreadCount: isProviderRole(currentUser) ? 0 : conv.providerUnreadCount
             }
           }
           return conv
@@ -572,8 +596,19 @@ export default function TinNhanPage() {
             ) : (
               conversations.map((conversation) => {
                 // Determine other user info based on current user role
-                const isCustomer = currentUser?.role === 'CUSTOMER'
-                const otherUserId = isCustomer ? conversation.providerId : conversation.customerId
+                const isCustomer = isCustomerRole(currentUser)
+                const otherUserId = isCustomer
+                  ? conversation.providerId
+                  : conversation.customerId
+
+                const unreadCount = currentUser?.id === conversation.customerId
+                  ? conversation.customerUnreadCount
+                  : currentUser?.id === conversation.providerId
+                    ? conversation.providerUnreadCount
+                    : isCustomer
+                      ? conversation.customerUnreadCount
+                      : conversation.providerUnreadCount
+
                 const cachedUser = usersCache[otherUserId]
                 const otherUserName = cachedUser ? (cachedUser.displayName || cachedUser.fullName || 'User') : 'Loading...'
                 const otherUserAvatar = cachedUser?.avatar
@@ -584,6 +619,7 @@ export default function TinNhanPage() {
                     conversation={conversation}
                     otherUserName={otherUserName}
                     otherUserAvatar={otherUserAvatar}
+                    unreadCount={unreadCount}
                     isActive={selectedConversation?.id === conversation.id}
                     onClick={() => setSelectedConversation(conversation)}
                     onDelete={() => handleDeleteConversation(conversation.id)}
@@ -672,7 +708,7 @@ export default function TinNhanPage() {
                     displayName: otherUser?.displayName || otherUser?.fullName,
                     avatar: otherUser?.avatar
                   }}
-                  currentUserRole={currentUser?.role === 'PROVIDER' ? 'PROVIDER' : 'CUSTOMER'}
+                  currentUserRole={isProviderRole(currentUser) ? 'PROVIDER' : 'CUSTOMER'}
                   isClosed={selectedConversation.isClosed}
                 />
               ) : (

@@ -31,13 +31,61 @@ export default function HomePage() {
   const [loadingPosts, setLoadingPosts] = useState(true)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [avatarLoadError, setAvatarLoadError] = useState(false)
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+
+  const resetCreatePostForm = () => {
+    setPostContent('')
+    setPostTitle('')
+    setPostError('')
+  }
+
+  const handleCancelCreatePost = () => {
+    if (postLoading) return
+
+    const hasDraft = postTitle.trim() || postContent.trim()
+    if (hasDraft && !confirm('Bạn có chắc muốn hủy đăng bài? Nội dung đã nhập sẽ bị mất.')) {
+      return
+    }
+
+    resetCreatePostForm()
+    setShowCreatePost(false)
+  }
 
   // Search states
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
+
+  const normalizeImageUrl = (rawUrl?: string | null) => {
+    if (!rawUrl) return ''
+    const cleanUrl = rawUrl.trim()
+    if (!cleanUrl) return ''
+
+    if (/^https?:\/\//i.test(cleanUrl) || cleanUrl.startsWith('data:')) {
+      return cleanUrl
+    }
+
+    const apiDomain = (process.env.NEXT_PUBLIC_API_DOMAIN || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '')
+    if (!apiDomain) return cleanUrl
+
+    if (cleanUrl.startsWith('/')) {
+      return `${apiDomain}${cleanUrl}`
+    }
+
+    return `${apiDomain}/${cleanUrl}`
+  }
+
+  const mapUserWithAvatar = (rawUser: any) => {
+    if (!rawUser) return null
+    const resolvedAvatar = normalizeImageUrl(rawUser.avatarUrl || rawUser.avatar)
+    return {
+      ...rawUser,
+      avatar: resolvedAvatar,
+      avatarUrl: resolvedAvatar,
+    }
+  }
 
   // Load số thông báo và tin nhắn chưa đọc
   const loadUnreadCounts = async () => {
@@ -129,7 +177,8 @@ export default function HomePage() {
         // Load thông tin user từ API
         try {
           const userData = await ProfileService.getMyProfile()
-          setCurrentUser(userData)
+          setCurrentUser(mapUserWithAvatar(userData))
+          setAvatarLoadError(false)
         } catch (error) {
           console.error('❌ Không thể load thông tin user:', error)
         }
@@ -585,12 +634,15 @@ export default function HomePage() {
     }
     const className = `${sizeClasses[size]} rounded-full flex items-center justify-center`
 
-    if (currentUser?.avatar) {
+    const avatarUrl = normalizeImageUrl(currentUser?.avatar || currentUser?.avatarUrl)
+
+    if (avatarUrl && !avatarLoadError) {
       return (
         <img
-          src={currentUser.avatar}
+          src={avatarUrl}
           alt="Avatar"
           className={`${className} object-cover`}
+          onError={() => setAvatarLoadError(true)}
         />
       )
     }
@@ -605,40 +657,53 @@ export default function HomePage() {
   // Hiển thị loading khi đang kiểm tra authentication
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-cyan-50 to-sky-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Đang tải...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 font-medium">Đang tải...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="relative flex flex-col h-screen overflow-hidden bg-gradient-to-br from-[#f2fbf9] via-[#f7fffd] to-[#e8f3ff]">
+      <div className="pointer-events-none absolute -left-20 -top-24 h-72 w-72 rounded-full bg-emerald-200/40 blur-3xl animate-pulse" />
+      <div className="pointer-events-none absolute -right-20 top-1/3 h-80 w-80 rounded-full bg-cyan-200/40 blur-3xl animate-pulse" style={{ animationDelay: '0.7s' }} />
+      <div className="pointer-events-none absolute bottom-0 left-1/4 h-64 w-64 rounded-full bg-sky-200/30 blur-3xl animate-pulse" style={{ animationDelay: '1.1s' }} />
       {/* Header */}
       <Header currentUser={currentUser} />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative z-10 flex flex-1 overflow-hidden">
         {/* Create Post Modal */}
         {showCreatePost && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg w-full max-w-lg mx-4 shadow-xl">
+          <div
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-start justify-center z-50 px-4 pt-28 sm:pt-32 pb-6 overflow-y-auto animate-fade-in"
+            onClick={handleCancelCreatePost}
+          >
+            <div
+              className="relative bg-white/95 border border-white/70 rounded-2xl w-full max-w-lg shadow-2xl shadow-cyan-900/15"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={handleCancelCreatePost}
+                disabled={postLoading}
+                aria-label="Đóng form đăng bài"
+                className="absolute top-3 right-3 inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h2 className="text-xl font-bold text-gray-800">Tạo bài viết</h2>
-                <button
-                  onClick={() => setShowCreatePost(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              <div className="p-5 pr-14 border-b border-slate-200/80">
+                <h2 className="text-xl font-bold text-slate-800">Tạo bài viết</h2>
               </div>
 
               {/* Modal Body */}
-              <div className="p-4">
+              <div className="p-5">
                 {/* User Info */}
                 <div className="flex items-center space-x-3 mb-4">
                   {renderAvatar('medium')}
@@ -669,7 +734,7 @@ export default function HomePage() {
                   value={postTitle}
                   onChange={(e) => setPostTitle(e.target.value)}
                   placeholder="Tiêu đề (ví dụ: Cần thợ sửa điện)"
-                  className="w-full p-3 mb-3 border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-3 mb-3 border border-slate-300 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
                 />
 
                 {/* Description */}
@@ -677,82 +742,97 @@ export default function HomePage() {
                   value={postContent}
                   onChange={(e) => setPostContent(e.target.value)}
                   placeholder="Mô tả chi tiết công việc cần làm..."
-                  className="w-full min-h-[150px] p-3 border border-gray-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-lg"
+                  className="w-full min-h-[150px] p-3 border border-slate-300 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none text-lg bg-white"
                 />
 
                 {/* Action Icons */}
-                <div className="border border-gray-300 rounded-lg p-3 mb-4">
-                  <div className="text-sm text-gray-500 text-center">
+                <div className="border border-slate-200 rounded-xl p-3 mb-4 bg-slate-50/70">
+                  <div className="text-sm text-slate-500 text-center">
                     Hoặc <button
                       onClick={() => {
+                        resetCreatePostForm()
                         setShowCreatePost(false)
                         router.push('/posts/create')
                       }}
-                      className="text-blue-500 hover:underline"
+                      className="text-teal-700 hover:underline font-medium"
                     >
                       tạo bài đăng chi tiết hơn
                     </button>
                   </div>
                 </div>
 
-                {/* Submit Button */}
-                <button
-                  disabled={postLoading || !postTitle.trim() || !postContent.trim()}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg transition disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  onClick={async () => {
-                    if (!postTitle.trim() || !postContent.trim()) {
-                      setPostError('Vui lòng nhập tiêu đề và mô tả!')
-                      return
-                    }
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCancelCreatePost}
+                    disabled={postLoading}
+                    className="w-full border border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Không đăng nữa
+                  </button>
 
-                    setPostLoading(true)
-                    setPostError('')
+                  {/* Submit Button */}
+                  <button
+                    disabled={postLoading || !postTitle.trim() || !postContent.trim()}
+                    className="w-full bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 disabled:from-slate-400 disabled:to-slate-400 disabled:cursor-not-allowed shadow-lg shadow-cyan-800/20"
+                    onClick={async () => {
+                      if (!postTitle.trim() || !postContent.trim()) {
+                        setPostError('Vui lòng nhập tiêu đề và mô tả!')
+                        return
+                      }
 
-                    try {
-                      const result = await PostService.createPost({
-                        title: postTitle.trim(),
-                        description: postContent.trim()
-                      })
+                      setPostLoading(true)
+                      setPostError('')
 
-                      console.log('✅ Tạo bài đăng thành công:', result)
-                      setShowCreatePost(false)
-                      setPostContent('')
-                      setPostTitle('')
-                      alert('Tạo bài đăng thành công!')
+                      try {
+                        const result = await PostService.createPost({
+                          title: postTitle.trim(),
+                          description: postContent.trim()
+                        })
 
-                      // Reload danh sách bài đăng để hiển thị bài mới
-                      await loadPosts()
+                        console.log('✅ Tạo bài đăng thành công:', result)
+                        setShowCreatePost(false)
+                        resetCreatePostForm()
+                        alert('Tạo bài đăng thành công!')
 
-                      // Có thể chuyển đến trang chi tiết nếu muốn
-                      // router.push(`/posts/${result.id}`)
-                    } catch (error: any) {
-                      console.error('❌ Lỗi tạo bài:', error)
-                      setPostError(error.message || 'Không thể tạo bài đăng. Vui lòng thử lại!')
-                    } finally {
-                      setPostLoading(false)
-                    }
-                  }}
-                >
-                  {postLoading ? 'Đang đăng...' : 'Đăng bài'}
-                </button>
+                        // Reload danh sách bài đăng để hiển thị bài mới
+                        await loadPosts()
+
+                        // Có thể chuyển đến trang chi tiết nếu muốn
+                        // router.push(`/posts/${result.id}`)
+                      } catch (error: any) {
+                        console.error('❌ Lỗi tạo bài:', error)
+                        setPostError(error.message || 'Không thể tạo bài đăng. Vui lòng thử lại!')
+                      } finally {
+                        setPostLoading(false)
+                      }
+                    }}
+                  >
+                    {postLoading ? 'Đang đăng...' : 'Đăng bài'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* Sidebar */}
-        <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+        <div className="hidden md:flex w-72 bg-gradient-to-b from-rose-50/85 via-orange-50/70 to-white/85 backdrop-blur-xl border-r border-rose-100/80 flex-col shadow-xl shadow-rose-900/5">
           {/* Navigation Menu */}
-          <nav className="flex-1 overflow-y-auto p-2">
+          <nav className="flex-1 overflow-y-auto p-3">
             <div className="space-y-1">
               {/* Người dùng */}
               <Link
                 href="/profile"
-                className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-blue-50 text-blue-600 transition cursor-pointer"
+                className="relative flex items-center space-x-3 px-3 py-3 rounded-2xl bg-gradient-to-r from-rose-100 via-orange-50 to-amber-50 border border-rose-200 text-rose-700 transition cursor-pointer shadow-md shadow-rose-900/10"
               >
+                <span className="absolute -top-2 right-2 rounded-full bg-rose-500 text-white text-[10px] font-semibold px-2 py-0.5 shadow-sm">
+                  Tài khoản của bạn
+                </span>
                 {renderAvatar('small')}
                 <div className="flex-1">
-                  <div className="font-medium text-sm">{currentUser?.fullName || currentUser?.displayName || 'Người dùng'}</div>
+                  <div className="font-semibold text-sm">{currentUser?.fullName || currentUser?.displayName || 'Người dùng'}</div>
+                  <div className="text-[11px] text-rose-600/80">Ưu tiên hiển thị</div>
                 </div>
               </Link>
 
@@ -767,21 +847,21 @@ export default function HomePage() {
                     {/* Menu cho Khách hàng */}
                     {isCustomer && (
                       <>
-                        <Link href="/bai-dang-cua-toi" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+                        <Link href="/bai-dang-cua-toi" className="flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-rose-50/80 hover:shadow-md text-slate-700 transition-all duration-200">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                           <span className="text-sm">Bài đăng của tôi</span>
                         </Link>
 
-                        <Link href="/lich-su" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+                        <Link href="/lich-su" className="flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-rose-50/80 hover:shadow-md text-slate-700 transition-all duration-200">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           <span className="text-sm">Lịch sử hoạt động</span>
                         </Link>
 
-                        <Link href="/yeu-thich" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+                        <Link href="/yeu-thich" className="flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-rose-50/80 hover:shadow-md text-slate-700 transition-all duration-200">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                           </svg>
@@ -793,21 +873,21 @@ export default function HomePage() {
                     {/* Menu cho Thợ */}
                     {isWorker && (
                       <>
-                        <Link href="/da-luu" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+                        <Link href="/da-luu" className="flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-rose-50/80 hover:shadow-md text-slate-700 transition-all duration-200">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
                           <span className="text-sm">Đã lưu</span>
                         </Link>
 
-                        <Link href="/gio-hang" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+                        <Link href="/gio-hang" className="flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-rose-50/80 hover:shadow-md text-slate-700 transition-all duration-200">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                           <span className="text-sm">Chào giá của tôi</span>
                         </Link>
 
-                        <Link href="/lich-su" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
+                        <Link href="/lich-su" className="flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-rose-50/80 hover:shadow-md text-slate-700 transition-all duration-200">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
@@ -824,7 +904,7 @@ export default function HomePage() {
             <div className="mt-6">
               <button
                 onClick={() => setShowCategories(!showCategories)}
-                className="flex items-center justify-between w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                className="flex items-center justify-between w-full px-3 py-2.5 text-sm text-slate-600 hover:bg-rose-50/80 rounded-xl transition"
               >
                 <span className="font-medium">Lĩnh vực của bạn</span>
                 <svg
@@ -839,7 +919,7 @@ export default function HomePage() {
               {showCategories && (
                 <div className="mt-2 space-y-1">
                   {categories.map(cat => (
-                    <a key={cat.id} href="#" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700 text-sm">
+                    <a key={cat.id} href="#" className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-rose-50/80 text-slate-700 text-sm transition-all hover:translate-x-1">
                       <span>{cat.icon}</span>
                       <span>{cat.name}</span>
                     </a>
@@ -852,7 +932,7 @@ export default function HomePage() {
             <div className="mt-6">
               <button
                 onClick={() => setShowServices(!showServices)}
-                className="flex items-center justify-between w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+                className="flex items-center justify-between w-full px-3 py-2.5 text-sm text-slate-600 hover:bg-rose-50/80 rounded-xl transition"
               >
                 <span className="font-medium">Khám phá thêm mục</span>
                 <svg
@@ -867,7 +947,7 @@ export default function HomePage() {
               {showServices && (
                 <div className="mt-2 space-y-1">
                   {services.map(service => (
-                    <a key={service.id} href="#" className={`flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-sm ${service.color}`}>
+                    <a key={service.id} href="#" className={`flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-rose-50/80 text-sm transition-all hover:translate-x-1 ${service.color}`}>
                       <span>{service.icon}</span>
                       <span className="text-gray-700">{service.name}</span>
                     </a>
@@ -882,8 +962,18 @@ export default function HomePage() {
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Content Area */}
-          <div className="flex-1 overflow-y-auto bg-gray-50">
-            <div className="max-w-3xl mx-auto py-6 px-4">
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-4xl mx-auto py-6 px-3 md:px-6">
+              <div className="md:hidden mb-4 animate-fade-in">
+                <div className="rounded-2xl border border-white/80 bg-white/80 backdrop-blur p-3 shadow-lg shadow-slate-900/5">
+                  <div className="flex items-center gap-2 overflow-x-auto">
+                    <Link href="/profile" className="shrink-0 px-3 py-1.5 rounded-full bg-teal-600 text-white text-sm font-medium">Cá nhân</Link>
+                    <Link href="/bai-dang-cua-toi" className="shrink-0 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-sm">Bài đăng</Link>
+                    <Link href="/lich-su" className="shrink-0 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-sm">Lịch sử</Link>
+                    <Link href="/yeu-thich" className="shrink-0 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-sm">Yêu thích</Link>
+                  </div>
+                </div>
+              </div>
               {/* Create Post Section - Chỉ hiển thị cho Khách hàng */}
               {(() => {
                 const userRole = currentUser?.accountType || currentUser?.role
@@ -892,7 +982,7 @@ export default function HomePage() {
                 if (!isCustomer) return null
 
                 return (
-                  <div className="bg-white rounded-lg shadow-sm mb-4 p-4">
+                  <div className="bg-white/85 backdrop-blur rounded-2xl border border-white/80 shadow-xl shadow-slate-900/5 mb-5 p-4 md:p-5 animate-fade-in">
                     <div className="flex items-center space-x-3">
                       {renderAvatar('medium')}
                       <input
@@ -900,26 +990,26 @@ export default function HomePage() {
                         placeholder="Bạn cần tìm thợ gì?"
                         onClick={() => setShowCreatePost(true)}
                         readOnly
-                        className="flex-1 px-4 py-2 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 cursor-pointer"
+                        className="flex-1 px-4 py-2.5 bg-slate-100/90 rounded-full focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-700 cursor-pointer hover:bg-slate-100 transition"
                       />
                     </div>
 
                     {/* Filter Buttons */}
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-                      <button className="flex items-center space-x-2 px-4 py-2 text-green-600 hover:bg-green-50 rounded-lg transition">
+                    <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-200">
+                      <button className="flex items-center justify-center space-x-2 px-3 py-2 text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 rounded-xl transition">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <span className="font-medium">Ảnh/Video</span>
                       </button>
-                      <button className="flex items-center space-x-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition">
+                      <button className="flex items-center justify-center space-x-2 px-3 py-2 text-rose-700 bg-rose-50/70 hover:bg-rose-100 rounded-xl transition">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                         <span className="font-medium">Vị trí</span>
                       </button>
-                      <button className="flex items-center space-x-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition">
+                      <button className="flex items-center justify-center space-x-2 px-3 py-2 text-cyan-700 bg-cyan-50/70 hover:bg-cyan-100 rounded-xl transition">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
@@ -931,31 +1021,31 @@ export default function HomePage() {
               })()}
 
               {/* Tabs */}
-              <div className="bg-white rounded-lg shadow-sm mb-4">
-                <div className="flex border-b border-gray-200">
+              <div className="bg-white/85 backdrop-blur rounded-2xl border border-white/80 shadow-xl shadow-slate-900/5 mb-5 animate-fade-in">
+                <div className="flex p-2 gap-2">
                   <button
                     onClick={() => setActiveTab('all')}
-                    className={`flex-1 px-6 py-3 text-sm font-medium ${activeTab === 'all'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-600 hover:text-gray-800'
+                    className={`flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${activeTab === 'all'
+                      ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-lg shadow-cyan-700/20'
+                      : 'text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     Tất cả
                   </button>
                   <button
                     onClick={() => setActiveTab('services')}
-                    className={`flex-1 px-6 py-3 text-sm font-medium ${activeTab === 'services'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-600 hover:text-gray-800'
+                    className={`flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${activeTab === 'services'
+                      ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-lg shadow-cyan-700/20'
+                      : 'text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     Gần tôi
                   </button>
                   <button
                     onClick={() => setActiveTab('jobs')}
-                    className={`flex-1 px-6 py-3 text-sm font-medium ${activeTab === 'jobs'
-                      ? 'text-blue-600 border-b-2 border-blue-600'
-                      : 'text-gray-600 hover:text-gray-800'
+                    className={`flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 ${activeTab === 'jobs'
+                      ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-lg shadow-cyan-700/20'
+                      : 'text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     Gấp
@@ -971,12 +1061,12 @@ export default function HomePage() {
                   <SkeletonPost />
                 </>
               ) : posts.length === 0 ? (
-                <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-                  <svg className="w-20 h-20 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="bg-white/85 backdrop-blur rounded-2xl border border-white/80 shadow-xl shadow-slate-900/5 p-12 text-center animate-fade-in">
+                  <svg className="w-20 h-20 text-slate-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
                   </svg>
-                  <h3 className="text-xl font-semibold text-gray-700 mb-2">Chưa có bài đăng nào</h3>
-                  <p className="text-gray-500 mb-6">Hãy là người đầu tiên tạo bài đăng!</p>
+                  <h3 className="text-xl font-semibold text-slate-700 mb-2">Chưa có bài đăng nào</h3>
+                  <p className="text-slate-500 mb-6">Hãy là người đầu tiên tạo bài đăng!</p>
                   {(() => {
                     const userRole = currentUser?.accountType || currentUser?.role
                     const isCustomer = userRole === 'CUSTOMER' || userRole === 'customer'
@@ -986,7 +1076,7 @@ export default function HomePage() {
                     return (
                       <button
                         onClick={() => setShowCreatePost(true)}
-                        className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white rounded-xl hover:from-emerald-700 hover:to-cyan-700 transition shadow-lg shadow-cyan-800/20"
                       >
                         <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -997,7 +1087,7 @@ export default function HomePage() {
                   })()}
                 </div>
               ) : (
-                posts.map(post => {
+                posts.map((post, index) => {
                   // Kiểm tra xem bài viết có phải của currentUser không
                   // So sánh nhiều trường có thể có
                   const isMyPost =
@@ -1011,9 +1101,9 @@ export default function HomePage() {
                   const postAuthor = isMyPost ? currentUser : post.customer
 
                   return (
-                    <div key={post.id} className="bg-white rounded-lg shadow-sm mb-4 overflow-hidden">
+                    <div key={post.id} className="bg-white/90 backdrop-blur rounded-2xl border border-white/80 shadow-xl shadow-slate-900/5 mb-5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-cyan-900/10 animate-fade-in" style={{ animationDelay: `${Math.min(0.8, index * 0.05)}s` }}>
                       {/* Post Header */}
-                      <div className="p-4 border-b border-gray-100">
+                      <div className="p-4 border-b border-slate-100">
                         <div className="flex items-start justify-between">
                           <Link
                             href={isMyPost ? '/profile' : `/profile/${post.customerId || post.customer?.id || post.customer?.customerId}`}
@@ -1083,8 +1173,8 @@ export default function HomePage() {
                             </div>
                             {/* Tên và thông tin - Ở bên phải */}
                             <div>
-                              <h3 className="font-semibold text-gray-800 hover:text-blue-600">{postAuthor?.fullName || post.author || currentUser?.fullName || 'Người dùng'}</h3>
-                              <div className="flex items-center space-x-2 text-xs text-gray-500">
+                              <h3 className="font-semibold text-slate-800 hover:text-cyan-700 transition">{postAuthor?.fullName || post.author || currentUser?.fullName || 'Người dùng'}</h3>
+                              <div className="flex items-center space-x-2 text-xs text-slate-500">
                                 <span>{post.time || new Date(post.createdAt).toLocaleDateString('vi-VN')}</span>
                                 <span>•</span>
                                 <span>{post.location || 'Chưa cập nhật'}</span>
@@ -1106,7 +1196,7 @@ export default function HomePage() {
                                     e.stopPropagation()
                                     setOpenMenuId(openMenuId === post.id ? null : post.id)
                                   }}
-                                  className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors"
+                                  className="text-slate-400 hover:text-slate-700 p-1.5 hover:bg-slate-100 rounded-full transition-colors"
                                 >
                                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
@@ -1116,7 +1206,7 @@ export default function HomePage() {
                                 {/* Dropdown Menu */}
                                 {openMenuId === post.id && (
                                   <div
-                                    className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50"
+                                    className="absolute right-0 mt-2 w-48 bg-white/95 backdrop-blur rounded-xl shadow-xl border border-slate-200 py-2 z-50"
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     {/* Kiểm tra ownership */}
@@ -1127,7 +1217,7 @@ export default function HomePage() {
                                             e.stopPropagation()
                                             handleEditPost(post.id)
                                           }}
-                                          className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                                          className="w-full px-4 py-2 text-left hover:bg-slate-50 flex items-center gap-3 text-slate-700 text-sm transition-colors"
                                         >
                                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1141,7 +1231,7 @@ export default function HomePage() {
                                               e.stopPropagation()
                                               handleClosePost(post.id)
                                             }}
-                                            className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700 text-sm transition-colors"
+                                            className="w-full px-4 py-2 text-left hover:bg-slate-50 flex items-center gap-3 text-slate-700 text-sm transition-colors"
                                           >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1150,14 +1240,14 @@ export default function HomePage() {
                                           </button>
                                         )}
 
-                                        <div className="border-t border-gray-200 my-2"></div>
+                                        <div className="border-t border-slate-200 my-2"></div>
 
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation()
                                             handleDeletePost(post.id)
                                           }}
-                                          className="w-full px-4 py-2 text-left hover:bg-red-50 flex items-center gap-3 text-red-600 text-sm transition-colors"
+                                          className="w-full px-4 py-2 text-left hover:bg-rose-50 flex items-center gap-3 text-rose-600 text-sm transition-colors"
                                         >
                                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1167,7 +1257,7 @@ export default function HomePage() {
                                       </>
                                     ) : (
                                       <div className="px-4 py-3">
-                                        <p className="text-sm text-gray-500 text-center">
+                                        <p className="text-sm text-slate-500 text-center">
                                           {!currentUser ? 'Vui lòng đăng nhập' : 'Chỉ chủ bài đăng mới có thể chỉnh sửa'}
                                         </p>
                                       </div>
@@ -1181,8 +1271,8 @@ export default function HomePage() {
                       </div>
 
                       {/* Post Content */}
-                      <Link href={`/posts/${post.id}`} className="block p-4 hover:bg-gray-50 transition-colors cursor-pointer">
-                        <p className="text-gray-800 mb-3 hover:text-blue-600">{post.title}</p>
+                      <Link href={`/posts/${post.id}`} className="block p-4 hover:bg-cyan-50/40 transition-colors cursor-pointer">
+                        <p className="text-slate-800 mb-3 hover:text-cyan-700 transition">{post.title}</p>
                         <div className="flex items-center space-x-3 text-sm">
                           <span className={`inline-flex items-center px-3 py-1 rounded-full font-medium ${post.status === 'Đăng' ? 'bg-green-100 text-green-800' :
                             post.status === 'Đang thực hiện' ? 'bg-blue-100 text-blue-800' :
@@ -1190,7 +1280,7 @@ export default function HomePage() {
                             }`}>
                             {post.status}
                           </span>
-                          <span className="inline-flex items-center text-green-600 font-semibold">
+                          <span className="inline-flex items-center text-emerald-700 font-semibold">
                             {post.price}
                           </span>
                           {post.urgent && (
@@ -1285,17 +1375,17 @@ export default function HomePage() {
                       )}
 
                       {/* Post Stats */}
-                      <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+                      <div className="px-4 py-2 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
                         <span>{post.likes} lượt thích</span>
                       </div>
 
                       {/* Post Actions */}
-                      <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-around">
-                        <button className="flex items-center space-x-2 px-4 py-2 hover:bg-gray-50 rounded-lg transition">
-                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="px-3 md:px-4 py-2 border-t border-slate-100 flex items-center justify-around gap-2">
+                        <button className="flex items-center space-x-2 px-4 py-2 hover:bg-slate-100 rounded-xl transition">
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
                           </svg>
-                          <span className="text-gray-700 font-medium">Thích</span>
+                          <span className="text-slate-700 font-medium">Thích</span>
                         </button>
 
                         {!isMyPost && (() => {
@@ -1311,7 +1401,7 @@ export default function HomePage() {
                                 e.stopPropagation()
                                 router.push(`/posts/${post.id}`)
                               }}
-                              className="flex items-center space-x-2 px-4 py-2 hover:bg-green-50 rounded-lg transition"
+                              className="flex items-center space-x-2 px-4 py-2 hover:bg-emerald-50 rounded-xl transition"
                             >
                               <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1321,11 +1411,11 @@ export default function HomePage() {
                           )
                         })()}
 
-                        <button className="flex items-center space-x-2 px-4 py-2 hover:bg-gray-50 rounded-lg transition">
-                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button className="flex items-center space-x-2 px-4 py-2 hover:bg-slate-100 rounded-xl transition">
+                          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
-                          <span className="text-gray-700 font-medium">Lưu</span>
+                          <span className="text-slate-700 font-medium">Lưu</span>
                         </button>
                       </div>
 

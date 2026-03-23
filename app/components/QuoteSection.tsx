@@ -16,6 +16,7 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
   const router = useRouter()
   const [quotes, setQuotes] = useState<Quote[]>([])
   const [loading, setLoading] = useState(false)
+  const pendingQuotes = quotes.filter((quote) => quote.status === 'PENDING')
 
   useEffect(() => {
     loadQuotes()
@@ -92,9 +93,7 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
       }
 
       alert('Đã chấp nhận báo giá! Chat đã được mở.')
-
-      // Reload quotes để cập nhật status
-      await loadQuotes()
+      setQuotes(prev => prev.filter(q => q.id !== quoteId))
 
       // Delay để chắc chắn socket đã join conversation
       await new Promise(resolve => setTimeout(resolve, 800))
@@ -112,8 +111,8 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
       console.log('Rejecting quote:', quoteId)
       await quoteService.rejectQuote(quoteId, 'Khách hàng từ chối')
       console.log('Quote rejected')
+      setQuotes(prev => prev.filter(q => q.id !== quoteId))
       alert('Đã từ chối báo giá!')
-      loadQuotes()
     } catch (error: any) {
       console.error('Error rejecting quote:', error)
       alert(error.message || 'Không thể từ chối báo giá')
@@ -174,15 +173,15 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
       <div className="bg-white rounded-lg shadow-sm p-4 mt-4 space-y-6">
         {/* Section 1: Quotes list */}
         <div>
-          <h3 className="font-bold text-lg mb-3">💰 Các báo giá ({quotes.length})</h3>
+          <h3 className="font-bold text-lg mb-3">💰 Các báo giá ({pendingQuotes.length})</h3>
 
           {loading ? (
             <p className="text-center text-gray-500 py-4">Đang tải...</p>
-          ) : quotes.length === 0 ? (
+          ) : pendingQuotes.length === 0 ? (
             <p className="text-center text-gray-500 py-4">Chưa có báo giá nào</p>
           ) : (
             <div className="space-y-3">
-              {quotes.map((quote) => (
+              {pendingQuotes.map((quote) => (
                 <div
                   key={quote.id}
                   onClick={() => {
@@ -280,16 +279,16 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
         <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        Các báo giá ({quotes.length})
+        Các báo giá ({pendingQuotes.length})
       </h3>
 
       {loading ? (
         <p className="text-center text-gray-500 py-4">Đang tải...</p>
-      ) : quotes.length === 0 ? (
+      ) : pendingQuotes.length === 0 ? (
         <p className="text-center text-gray-500 py-4">Chưa có báo giá nào</p>
       ) : (
         <div className="space-y-3">
-          {quotes.map((quote) => (
+          {pendingQuotes.map((quote) => (
             <div
               key={quote.id}
               className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-lg hover:border-blue-400 transition-all"
@@ -356,36 +355,26 @@ export default function QuoteSection({ postId, isPostOwner }: QuoteSectionProps)
                 </span>
               </div>
 
-              {quote.status === 'PENDING' && (
-                <div className="flex space-x-2 mt-3">
-                  <button
-                    onClick={() => handleAcceptQuote(quote.id)}
-                    className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Chấp nhận
-                  </button>
-                  <button
-                    onClick={() => handleRejectQuote(quote.id)}
-                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    Từ chối
-                  </button>
-                </div>
-              )}
-
-              {quote.status !== 'PENDING' && (
-                <div className="mt-3 p-3 bg-gray-100 rounded-lg text-center">
-                  <p className="text-sm font-semibold text-gray-700">
-                    Trạng thái: <span className={getStatusColor(quote.status)}>{getStatusText(quote.status)}</span>
-                  </p>
-                </div>
-              )}
+              <div className="flex space-x-2 mt-3">
+                <button
+                  onClick={() => handleAcceptQuote(quote.id)}
+                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Chấp nhận
+                </button>
+                <button
+                  onClick={() => handleRejectQuote(quote.id)}
+                  className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Từ chối
+                </button>
+              </div>
 
               {quote.status === 'IN_CHAT' && (
                 <button

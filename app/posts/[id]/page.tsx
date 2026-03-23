@@ -35,6 +35,18 @@ export default function PostDetailPage() {
     estimatedDuration: ''
   })
   const [isSubmittingQuote, setIsSubmittingQuote] = useState(false)
+  const [quoteSuccessMessage, setQuoteSuccessMessage] = useState('')
+  const [hasSubmittedQuote, setHasSubmittedQuote] = useState(false)
+
+  useEffect(() => {
+    if (!quoteSuccessMessage) return
+
+    const timer = setTimeout(() => {
+      setQuoteSuccessMessage('')
+    }, 3000)
+
+    return () => clearTimeout(timer)
+  }, [quoteSuccessMessage])
 
   useEffect(() => {
     // Kiểm tra authentication
@@ -168,22 +180,22 @@ export default function PostDetailPage() {
 
       console.log('✅ Quote created:', quoteResult)
 
-      // Tạo conversation với post owner
-      const conversation = await chatService.createDirectConversation({
-        providerId: post.customerId
-      })
-
-      console.log('✅ Conversation created:', conversation)
-
-      // Đóng modal
+      // Báo giá thành công thì đóng modal ngay
       setShowQuoteModal(false)
       setQuoteForm({ price: '', description: '', estimatedDuration: '' })
+      setHasSubmittedQuote(true)
+      setQuoteSuccessMessage('Gửi báo giá thành công!')
 
-      // Hiển thị thông báo thành công
-      alert('Đã gửi báo giá thành công! Chuyển đến trang tin nhắn...')
+      // Tạo conversation với post owner
+      try {
+        const conversation = await chatService.createDirectConversation({
+          providerId: post.customerId
+        })
+        console.log('✅ Conversation created:', conversation)
+      } catch (conversationError) {
+        console.warn('⚠️ Quote đã gửi nhưng tạo conversation thất bại:', conversationError)
+      }
 
-      // Chuyển đến trang tin nhắn
-      router.push('/tin-nhan')
     } catch (err: any) {
       console.error('Error submitting quote:', err)
       alert(err.message || 'Không thể gửi báo giá. Vui lòng thử lại.')
@@ -238,6 +250,27 @@ export default function PostDetailPage() {
     <div className="flex flex-col min-h-screen bg-gray-50">
       {/* Header */}
       <Header />
+
+      {quoteSuccessMessage && (
+        <div className="fixed top-24 right-4 z-[70] max-w-sm w-[calc(100%-2rem)]">
+          <div className="flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 text-green-800 px-4 py-3 shadow-lg shadow-green-900/10">
+            <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <div className="flex-1 text-sm font-medium">{quoteSuccessMessage}</div>
+            <button
+              type="button"
+              onClick={() => setQuoteSuccessMessage('')}
+              className="text-green-600 hover:text-green-800 transition-colors"
+              aria-label="Đóng thông báo"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 py-8">
@@ -429,6 +462,12 @@ export default function PostDetailPage() {
 
                 {/* Action Buttons */}
                 <div className="space-y-3">
+                  {quoteSuccessMessage && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                      {quoteSuccessMessage}
+                    </div>
+                  )}
+
                   {!isOwner && (() => {
                     const userRole = currentUser?.accountType || currentUser?.role
                     const isWorker = userRole === 'WORKER' || userRole === 'provider'
@@ -436,6 +475,14 @@ export default function PostDetailPage() {
 
                     // Chỉ thợ mới có thể gửi báo giá, khách hàng không
                     if (isCustomer) return null
+
+                    if (hasSubmittedQuote) {
+                      return (
+                        <div className="w-full py-3 bg-green-50 border border-green-200 text-green-700 rounded-lg font-semibold text-center">
+                          Bạn đã gửi báo giá cho công việc này
+                        </div>
+                      )
+                    }
 
                     return (
                       <button

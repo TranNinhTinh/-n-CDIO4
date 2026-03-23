@@ -4,104 +4,116 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Header from '@/app/components/Header'
 import { AuthService } from '@/lib/api/auth.service'
+import { ProfileService } from '@/lib/api/profile-new.service'
 import Image from 'next/image'
 import Link from 'next/link'
 
 interface SavedPost {
   id: string
   title: string
-  service: string
-  price: string
-  location: string
-  postedBy: string
-  postedAt: string
-  savedAt: string
-  status: string
+  service?: string
+  price?: string
+  location?: string
+  postedBy?: string
+  postedAt?: string
+  savedAt?: string
+  status?: string
   urgent: boolean
 }
 
-const MOCK_SAVED_POSTS: SavedPost[] = [
-  {
-    id: '1',
-    title: 'Cần thợ sửa điện nước tại quận 1',
-    service: 'Sửa chữa điện nước',
-    price: '500,000 - 1,000,000đ',
-    location: 'Quận 1, TP.HCM',
-    postedBy: 'Nguyễn Văn A',
-    postedAt: '2 giờ trước',
-    savedAt: '1 giờ trước',
-    status: 'Đang tìm thợ',
-    urgent: true
-  },
-  {
-    id: '2',
-    title: 'Tìm thợ sơn nhà 3 tầng',
-    service: 'Sơn nhà',
-    price: '15,000,000 - 20,000,000đ',
-    location: 'Quận 7, TP.HCM',
-    postedBy: 'Phạm Minh D',
-    postedAt: '5 giờ trước',
-    savedAt: '3 giờ trước',
-    status: 'Đang tìm thợ',
-    urgent: false
-  },
-  {
-    id: '3',
-    title: 'Cần thợ làm tủ bếp gỗ công nghiệp',
-    service: 'Mộc - Đồ gỗ',
-    price: 'Thỏa thuận (dự kiến 25-30 triệu)',
-    location: 'Quận Bình Thạnh, TP.HCM',
-    postedBy: 'Hoàng Thu E',
-    postedAt: '1 ngày trước',
-    savedAt: '1 ngày trước',
-    status: 'Đang tìm thợ',
-    urgent: false
-  },
-  {
-    id: '4',
-    title: 'Máy lạnh không lạnh, cần thợ kiểm tra',
-    service: 'Sửa điều hòa',
-    price: '200,000 - 400,000đ',
-    location: 'Ngũ Hành Sơn, Đà Nẵng',
-    postedBy: 'Phạm Minh Tuấn',
-    postedAt: '6 giờ trước',
-    savedAt: '2 ngày trước',
-    status: 'Đang tìm thợ',
-    urgent: false
-  },
-  {
-    id: '5',
-    title: 'Cần thợ lắp camera an ninh cho cửa hàng',
-    service: 'Lắp đặt camera',
-    price: '2,000,000 - 3,000,000đ',
-    location: 'Thanh Khê, Đà Nẵng',
-    postedBy: 'Đỗ Minh Châu',
-    postedAt: '2 ngày trước',
-    savedAt: '2 ngày trước',
-    status: 'Đang tìm thợ',
-    urgent: true
-  }
-]
+interface CurrentUser {
+  id: string
+  fullName?: string
+  displayName?: string
+  avatarUrl?: string
+}
 
 export default function SavedPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
-  const [savedPosts, setSavedPosts] = useState<SavedPost[]>(MOCK_SAVED_POSTS)
+  const [savedPosts, setSavedPosts] = useState<SavedPost[]>([])
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'urgent'>('all')
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+
+  const getSavedPostsKey = (userId: string) => `saved_posts_${userId}`
+
+  const savePostsToStorage = (userId: string, posts: SavedPost[]) => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(getSavedPostsKey(userId), JSON.stringify(posts))
+  }
+
+  const loadSavedPostsFromStorage = (userId: string): SavedPost[] => {
+    if (typeof window === 'undefined') return []
+
+    const userKey = getSavedPostsKey(userId)
+    const raw = localStorage.getItem(userKey)
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return []
+      }
+    }
+
+    // Migrate old shared key into current user key one time to avoid cross-account mixing.
+    const legacyRaw = localStorage.getItem('saved_posts')
+    if (!legacyRaw) return []
+
+    try {
+      const parsed = JSON.parse(legacyRaw)
+      const migratedPosts = Array.isArray(parsed) ? parsed : []
+      localStorage.setItem(userKey, JSON.stringify(migratedPosts))
+      localStorage.removeItem('saved_posts')
+      return migratedPosts
+    } catch {
+      return []
+    }
+  }
+
+  const formatSavedAt = (savedAt?: string) => {
+    if (!savedAt) return 'gần đây'
+    const date = new Date(savedAt)
+    if (Number.isNaN(date.getTime())) return savedAt
+    return date.toLocaleString('vi-VN')
+  }
 
   useEffect(() => {
-    const checkAuth = () => {
+    const loadUserAndSavedPosts = async () => {
       if (!AuthService.isAuthenticated()) {
         router.push('/dang-nhap')
-      } else {
+        return
+      }
+
+      try {
+        const profile = await ProfileService.getMyProfile()
+        const user = {
+          id: profile.id,
+          fullName: profile.fullName,
+          displayName: profile.displayName,
+          avatarUrl: profile.avatarUrl,
+        }
+        setCurrentUser(user)
+        setSavedPosts(loadSavedPostsFromStorage(profile.id))
+      } catch (error) {
+        console.error('Không thể tải thông tin người dùng:', error)
+        router.push('/dang-nhap')
+      } finally {
         setIsLoading(false)
       }
     }
-    checkAuth()
+
+    loadUserAndSavedPosts()
   }, [router])
 
   const handleUnsave = (id: string) => {
-    setSavedPosts(prev => prev.filter(post => post.id !== id))
+    setSavedPosts(prev => {
+      const nextPosts = prev.filter(post => post.id !== id)
+      if (currentUser?.id) {
+        savePostsToStorage(currentUser.id, nextPosts)
+      }
+      return nextPosts
+    })
   }
 
   const filteredPosts = selectedFilter === 'urgent'
@@ -140,8 +152,14 @@ export default function SavedPage() {
           <nav className="flex-1 overflow-y-auto p-2">
             <div className="space-y-1">
               <a href="/profile" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">U</div>
-                <div className="flex-1"><div className="font-medium text-sm">Người dùng</div></div>
+                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
+                  {(currentUser?.displayName || currentUser?.fullName || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-sm line-clamp-1">
+                    {currentUser?.displayName || currentUser?.fullName || 'Người dùng'}
+                  </div>
+                </div>
               </a>
 
               <a href="/home" className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-700">
@@ -260,7 +278,7 @@ export default function SavedPage() {
                             <div className="flex items-center gap-2 mb-2">
                               <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${post.status === 'Đang tìm thợ' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                                 }`}>
-                                {post.status}
+                                {post.status || 'Đang xử lý'}
                               </span>
                               {post.urgent && (
                                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
@@ -278,28 +296,28 @@ export default function SavedPage() {
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                               </svg>
-                              <span>{post.service}</span>
+                              <span>{post.service || 'Dịch vụ khác'}</span>
                             </div>
                             <div className="space-y-2 text-sm text-gray-600">
                               <div className="flex items-center gap-2">
                                 <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <span className="font-semibold text-green-600">{post.price}</span>
+                                <span className="font-semibold text-green-600">{post.price || 'Liên hệ báo giá'}</span>
                               </div>
                               <div className="flex items-center gap-2">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                 </svg>
-                                <span>{post.location}</span>
+                                <span>{post.location || 'Chưa cập nhật địa điểm'}</span>
                               </div>
                               <div className="flex items-center gap-2 text-xs">
-                                <span>Đăng bởi: <strong>{post.postedBy}</strong></span>
+                                <span>Đăng bởi: <strong>{post.postedBy || 'Ẩn danh'}</strong></span>
                                 <span>•</span>
-                                <span>{post.postedAt}</span>
+                                <span>{post.postedAt || 'Không rõ thời gian'}</span>
                               </div>
                               <div className="text-xs text-gray-500">
-                                Đã lưu {post.savedAt}
+                                Đã lưu {formatSavedAt(post.savedAt)}
                               </div>
                             </div>
                           </div>

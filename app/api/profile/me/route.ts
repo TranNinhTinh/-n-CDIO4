@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_DOMAIN || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1'
+// Use proper domain from environment, remove /api/v1 if present
+const getDomainUrl = () => {
+  let baseDomain = process.env.NEXT_PUBLIC_API_DOMAIN || process.env.NEXT_PUBLIC_API_URL
+  if (!baseDomain) {
+    console.warn('❌ API_DOMAIN not configured, defaulting to localhost')
+    baseDomain = 'http://localhost:3000/api/v1'
+  }
+  // Remove /api/v1 suffix if present to add it back consistently
+  baseDomain = baseDomain.replace('/api/v1', '')
+  return baseDomain.endsWith('/api/v1') ? baseDomain : baseDomain + '/api/v1'
+}
+
+const API_BASE_URL = getDomainUrl()
 
 /**
  * GET /api/v1/profile/me
@@ -49,16 +61,22 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const data = await response.json()
-
     if (!response.ok) {
+      let errorMessage = 'Đơng lỗi'
+      try {
+        const data = await response.json()
+        errorMessage = data.message || data.error || 'Đơng lỗi'
+      } catch (e) {
+        console.error('❌ Failed to parse error response:', e)
+      }
       return NextResponse.json(
-        { error: data.message || 'Không thể lấy thông tin profile' },
+        { error: errorMessage },
         { status: response.status }
       )
     }
 
     // Map role từ backend sang accountType cho frontend
+    const data = await response.json()
     let userData = data.data || data
     if (userData.role) {
       // Convert: customer → CUSTOMER, provider → WORKER

@@ -90,7 +90,7 @@ export interface SearchProfilesQuery {
 // ============ Profile Service ============
 
 export class ProfileService {
-    private static readonly BASE_URL = `${API_CONFIG.BASE_URL}/profile`
+    private static readonly BASE_URL = '/api/profile'
 
     static getAuthToken(): string | null {
         if (typeof window === 'undefined') return null

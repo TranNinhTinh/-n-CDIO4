@@ -95,24 +95,12 @@ export default function ThongBaoPage() {
       setLoading(true)
       const response = await notificationService.getNotifications({ limit: 50 })
       console.log('📬 Notifications response:', response)
-      console.log('📬 Notifications data:', response.data)
-      console.log('📬 Notifications count:', response.data?.length)
 
-      // Xử lý cả 2 trường hợp: response.data hoặc response là array trực tiếp
-      let notificationsArray: Notification[] = []
-      if (Array.isArray(response)) {
-        // Backend trả về array trực tiếp
-        notificationsArray = response
-      } else if (response.data && Array.isArray(response.data)) {
-        // Backend trả về { data: [...] }
-        notificationsArray = response.data
-      } else if (response.notifications && Array.isArray(response.notifications)) {
-        // Backend có thể dùng key "notifications"
-        notificationsArray = response.notifications
-      }
+      // Backend chuẩn: { notifications, total, unreadCount }
+      const notificationsArray = Array.isArray(response.notifications)
+        ? response.notifications
+        : []
 
-      console.log('📬 Final notifications array:', notificationsArray)
-      console.log('📬 Notifications length:', notificationsArray.length)
       setNotifications(notificationsArray)
     } catch (err: any) {
       console.error('❌ Error fetching notifications:', err)
@@ -124,8 +112,8 @@ export default function ThongBaoPage() {
 
   const fetchUnreadCount = async () => {
     try {
-      const response = await notificationService.getUnreadCount()
-      setUnreadCount(response.unreadCount)
+      const count = await notificationService.getUnreadCount()
+      setUnreadCount(count)
     } catch (err) {
       console.error('Error fetching unread count:', err)
     }
@@ -169,7 +157,7 @@ export default function ThongBaoPage() {
     if (!confirm('Bạn có chắc muốn xóa tất cả thông báo đã đọc?')) return
 
     try {
-      await notificationService.deleteAllRead()
+      await notificationService.deleteReadNotifications()
       setNotifications(prev => prev.filter(notif => !notif.isRead))
     } catch (err) {
       console.error('Error deleting read notifications:', err)
@@ -182,7 +170,7 @@ export default function ThongBaoPage() {
     console.log('🔍 Type:', notification.type)
     console.log('🔍 Title:', notification.title)
     console.log('🔍 Message:', notification.message)
-    console.log('🔍 Data object:', notification.data)
+    console.log('🔍 Data object:', (notification as any).data)
     console.log('🔍 Metadata object:', (notification as any).metadata)
 
     // Đánh dấu đã đọc
@@ -191,7 +179,7 @@ export default function ThongBaoPage() {
     }
 
     // Backend gửi data trong field "metadata", KHÔNG phải "data"
-    const metadata = (notification as any).metadata || notification.data
+    const metadata = (notification as any).metadata || (notification as any).data
 
     let postId = null
 
@@ -232,7 +220,7 @@ export default function ThongBaoPage() {
       console.log('✅ Quote accepted, response:', response)
 
       // Backend trả về conversationId sau khi tạo conversation
-      const conversationId = response.conversationId || response.data?.conversationId
+      const conversationId = response.conversationId
 
       console.log('✅ ConversationId:', conversationId)
 
@@ -314,7 +302,7 @@ export default function ThongBaoPage() {
     }
   }
 
-  const formatTime = (timestamp: string) => {
+  const formatTime = (timestamp: string | Date) => {
     const now = new Date()
     const time = new Date(timestamp)
     const diffInMs = now.getTime() - time.getTime()
@@ -429,7 +417,7 @@ export default function ThongBaoPage() {
                   // Debug: Log notification data
                   console.log('🔍 Notification type:', notification.type)
                   console.log('🔍 Is quote notification:', isQuoteNotification)
-                  console.log('🔍 Notification data:', notification.data)
+                  console.log('🔍 Notification data:', (notification as any).data)
 
                   return (
                     <div
@@ -564,7 +552,7 @@ export default function ThongBaoPage() {
                   {quotes.map((quote) => {
                     console.log('📋 Quote item:', quote)
                     console.log('📋 Quote status:', quote.status)
-                    console.log('📋 Provider info from API:', quote.providerName, quote.providerEmail, quote.providerPhone)
+                    console.log('📋 Provider info from API:', quote.providerName)
 
                     // Normalize status (backend trả về 'pending' chữ thường)
                     const normalizedStatus = quote.status?.toUpperCase() || 'PENDING'
@@ -665,7 +653,7 @@ export default function ThongBaoPage() {
                         </div>
 
                         {/* Actions - Làm nổi bật hơn */}
-                        {(normalizedStatus === 'PENDING' || !quote.status || quote.status === 'pending') && (
+                        {(normalizedStatus === 'PENDING' || !quote.status) && (
                           <div className="mt-6 pt-4 border-t-2 border-orange-200 bg-orange-50/50 rounded-b-lg p-4 -mx-4 -mb-4">
                             <p className="text-sm text-gray-700 mb-3 font-bold text-center">
                               👇 Bạn muốn làm gì với báo giá này? 👇

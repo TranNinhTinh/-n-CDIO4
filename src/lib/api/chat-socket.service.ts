@@ -2,7 +2,19 @@
 import { io, Socket } from 'socket.io-client'
 import { AuthService } from './auth.service'
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
+// Get socket URL - use current origin in development
+const SOCKET_URL = () => {
+  const env = process.env.NEXT_PUBLIC_SOCKET_URL
+  if (env) return env
+  // In browser, use current origin to match the dev server port
+  if (typeof window !== 'undefined') {
+    return window.location.origin
+  }
+  // Fallback for server-side (should not happen)
+  return 'http://localhost:3000'
+}
+
+const socketUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
 
 export interface Message {
   id: string
@@ -51,8 +63,9 @@ class ChatSocketService {
     }
 
     console.log('🔌 Connecting to chat socket...')
+    console.log('   URL:', `${socketUrl}/socket.io`)
 
-    this.socket = io(`${SOCKET_URL}/chat`, {
+    this.socket = io(`${socketUrl}`, {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,

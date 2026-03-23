@@ -2,14 +2,9 @@
 import { io, Socket } from 'socket.io-client'
 import { AuthService } from './auth.service'
 
-// Lấy SOCKET_URL từ environment variable
-const getSocketUrl = () => {
-  const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN || 'http://localhost:3000/api/v1'
-  // Loại bỏ /api/v1 để lấy domain gốc
-  return apiDomain.replace('/api/v1', '')
-}
-
-const SOCKET_URL = getSocketUrl()
+// Use current origin to match the dev server port (auto-detects 3003, 3004, etc)
+// This avoids CORS/WebSocket issues with ngrok backend
+const SOCKET_URL = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000')
 
 class SocketService {
   private socket: Socket | null = null

@@ -5,13 +5,16 @@ import { useRouter } from 'next/navigation'
 import Header from '@/app/components/Header'
 import { ProfileService, ProfileResponse, UpdateProfileDto, UpdateContactDto, ChangeDisplayNameDto } from '@/lib/api/profile-new.service'
 import { PostService } from '@/lib/api/post.service'
+import { AuthService } from '@/lib/api/auth.service'
+import { UserService } from '@/lib/api/user.service'
 
 export default function Profile() {
   const router = useRouter()
   const [profile, setProfile] = useState<ProfileResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'view' | 'edit' | 'contact' | 'display-name' | 'avatar' | 'my-posts'>('view')
+  const [avatarLoadError, setAvatarLoadError] = useState(false)
+  const [activeTab, setActiveTab] = useState<'view' | 'edit' | 'contact' | 'display-name' | 'avatar' | 'my-posts' | 'change-password'>('view')
   const [isSaving, setIsSaving] = useState(false)
 
   // My Posts states
@@ -27,17 +30,53 @@ export default function Profile() {
   const [contactForm, setContactForm] = useState<UpdateContactDto>({})
   const [displayNameForm, setDisplayNameForm] = useState({ displayName: '' })
   const [avatarForm, setAvatarForm] = useState({ avatarUrl: '' })
+  const [changePasswordForm, setChangePasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
 
   // Load profile on mount
   useEffect(() => {
+    if (!AuthService.isAuthenticated()) {
+      router.push('/dang-nhap')
+      return
+    }
+
     loadProfile()
-  }, [])
+  }, [router])
+
+  const normalizeImageUrl = (rawUrl?: string | null) => {
+    if (!rawUrl) return ''
+    const cleanUrl = rawUrl.trim()
+    if (!cleanUrl) return ''
+
+    if (/^https?:\/\//i.test(cleanUrl) || cleanUrl.startsWith('data:')) {
+      return cleanUrl
+    }
+
+    const apiDomain = (process.env.NEXT_PUBLIC_API_DOMAIN || process.env.NEXT_PUBLIC_API_URL || '').replace(/\/api\/v1\/?$/, '')
+    if (!apiDomain) return cleanUrl
+
+    if (cleanUrl.startsWith('/')) {
+      return `${apiDomain}${cleanUrl}`
+    }
+
+    return `${apiDomain}/${cleanUrl}`
+  }
 
   const loadProfile = async () => {
     try {
       setLoading(true)
       const data = await ProfileService.getMyProfile()
-      setProfile(data)
+      const resolvedAvatarUrl = normalizeImageUrl((data as any).avatarUrl || (data as any).avatar)
+      const normalizedProfile = {
+        ...data,
+        avatarUrl: resolvedAvatarUrl,
+      }
+
+      setAvatarLoadError(false)
+      setProfile(normalizedProfile)
       setEditForm({
         fullName: data.fullName,
         bio: data.bio,
@@ -50,11 +89,24 @@ export default function Profile() {
         phone: data.phone || '',
       })
       setDisplayNameForm({ displayName: data.displayName || '' })
-      setAvatarForm({ avatarUrl: data.avatarUrl || '' })
+      setAvatarForm({ avatarUrl: resolvedAvatarUrl })
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load profile')
+      const errorMsg = err instanceof Error ? err.message : 'Không tải được hồ sơ'
       console.error('Error loading profile:', err)
+      
+      // Check for Unauthorized
+      if (errorMsg.includes('Unauthorized') || errorMsg.includes('401')) {
+        setError('❌ Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại')
+        setTimeout(() => {
+          localStorage.removeItem('accessToken')
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          router.push('/dang-nhap')
+        }, 2000)
+      } else {
+        setError(errorMsg)
+      }
     } finally {
       setLoading(false)
     }
@@ -65,11 +117,14 @@ export default function Profile() {
       setIsSaving(true)
       setError('')
       const updated = await ProfileService.updateProfile(editForm)
-      setProfile(updated)
+      setProfile(prev => ({
+        ...updated,
+        avatarUrl: normalizeImageUrl((updated as any).avatarUrl || (updated as any).avatar || prev?.avatarUrl),
+      }))
       setActiveTab('view')
-      alert('✅ Profile updated successfully')
+      alert('✅ Cập nhật hồ sơ thành công')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update profile')
+      setError(err instanceof Error ? err.message : 'Không thể cập nhật hồ sơ')
     } finally {
       setIsSaving(false)
     }
@@ -80,11 +135,14 @@ export default function Profile() {
       setIsSaving(true)
       setError('')
       const updated = await ProfileService.updateContact(contactForm)
-      setProfile(updated)
+      setProfile(prev => ({
+        ...updated,
+        avatarUrl: normalizeImageUrl((updated as any).avatarUrl || (updated as any).avatar || prev?.avatarUrl),
+      }))
       setActiveTab('view')
-      alert('✅ Contact information updated successfully')
+      alert('✅ Cập nhật thông tin liên hệ thành công')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update contact')
+      setError(err instanceof Error ? err.message : 'Không thể cập nhật thông tin liên hệ')
     } finally {
       setIsSaving(false)
     }
@@ -97,11 +155,11 @@ export default function Profile() {
       const response = await ProfileService.changeDisplayName(displayNameForm)
       await loadProfile()
       setActiveTab('view')
-      alert(`✅ ${response.message}\nDays until next change: ${response.daysUntilNextChange}`)
+      alert(`✅ ${response.message}\nSố ngày tới lần đổi tiếp theo: ${response.daysUntilNextChange}`)
     } catch (err: any) {
-      const message = err.message || 'Failed to change display name'
+      const message = err.message || 'Không thể đổi tên hiển thị'
       if (err.daysUntilCanChange) {
-        setError(`${message}\nDays remaining: ${err.daysUntilCanChange}`)
+        setError(`${message}\nSố ngày còn lại: ${err.daysUntilCanChange}`)
       } else {
         setError(message)
       }
@@ -115,18 +173,24 @@ export default function Profile() {
       setIsSaving(true)
       setError('')
       const updated = await ProfileService.updateAvatar(avatarForm)
-      setProfile(updated)
+      const resolvedAvatarUrl = normalizeImageUrl((updated as any).avatarUrl || (updated as any).avatar || avatarForm.avatarUrl)
+      setProfile({
+        ...updated,
+        avatarUrl: resolvedAvatarUrl,
+      })
+      setAvatarForm({ avatarUrl: resolvedAvatarUrl })
+      setAvatarLoadError(false)
       setActiveTab('view')
-      alert('✅ Avatar updated successfully')
+      alert('✅ Cập nhật ảnh đại diện thành công')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update avatar')
+      setError(err instanceof Error ? err.message : 'Không thể cập nhật ảnh đại diện')
     } finally {
       setIsSaving(false)
     }
   }
 
   const handleDeleteAccount = async () => {
-    if (!confirm('⚠️ Are you sure you want to delete your account? This can be recovered within 30 days.')) {
+    if (!confirm('⚠️ Bạn có chắc chắn muốn xóa tài khoản? Bạn có thể khôi phục trong vòng 30 ngày.')) {
       return
     }
 
@@ -136,9 +200,42 @@ export default function Profile() {
       const response = await ProfileService.deleteAccount()
       alert(response.message)
       localStorage.removeItem('accessToken')
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
       router.push('/dang-nhap')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete account')
+      setError(err instanceof Error ? err.message : 'Không thể xóa tài khoản')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    try {
+      setIsSaving(true)
+      setError('')
+
+      if (!changePasswordForm.currentPassword || !changePasswordForm.newPassword || !changePasswordForm.confirmPassword) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin đổi mật khẩu')
+      }
+
+      if (changePasswordForm.newPassword.length < 8) {
+        throw new Error('Mật khẩu mới phải có ít nhất 8 ký tự')
+      }
+
+      if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+        throw new Error('Mật khẩu xác nhận không khớp')
+      }
+
+      await UserService.changePassword(changePasswordForm)
+      setChangePasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      })
+      alert('✅ Đổi mật khẩu thành công')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể đổi mật khẩu')
     } finally {
       setIsSaving(false)
     }
@@ -153,7 +250,7 @@ export default function Profile() {
       setMyPosts(response.data || [])
       setPostsLoaded(true)
     } catch (err) {
-      setPostsError(err instanceof Error ? err.message : 'Failed to load posts')
+      setPostsError(err instanceof Error ? err.message : 'Không thể tải danh sách bài đăng')
       console.error('Error loading posts:', err)
     } finally {
       setPostsLoading(false)
@@ -170,7 +267,7 @@ export default function Profile() {
       setMyPosts(myPosts.filter(p => p.id !== postId))
       alert('✅ Bài đăng đã xóa')
     } catch (err) {
-      setPostsError(err instanceof Error ? err.message : 'Failed to delete post')
+      setPostsError(err instanceof Error ? err.message : 'Không thể xóa bài đăng')
     }
   }
 
@@ -180,7 +277,7 @@ export default function Profile() {
       setMyPosts(myPosts.map(p => p.id === postId ? updatedPost : p))
       alert('✅ Bài đăng đã đóng')
     } catch (err) {
-      setPostsError(err instanceof Error ? err.message : 'Failed to close post')
+      setPostsError(err instanceof Error ? err.message : 'Không thể đóng bài đăng')
     }
   }
 
@@ -214,7 +311,7 @@ export default function Profile() {
       setEditPostForm({})
       alert('✅ Bài đăng đã cập nhật')
     } catch (err) {
-      setPostsError(err instanceof Error ? err.message : 'Failed to update post')
+      setPostsError(err instanceof Error ? err.message : 'Không thể cập nhật bài đăng')
     }
   }
 
@@ -223,7 +320,7 @@ export default function Profile() {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
+          <p className="text-gray-600">Đang tải hồ sơ...</p>
         </div>
       </div>
     )
@@ -233,12 +330,12 @@ export default function Profile() {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="bg-white rounded-lg p-8 shadow-sm max-w-md w-full text-center">
-          <p className="text-red-600 mb-4">Failed to load profile</p>
+          <p className="text-red-600 mb-4">Không tải được hồ sơ</p>
           <button
             onClick={() => router.push('/home')}
             className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"
           >
-            Go Home
+            Về trang chủ
           </button>
         </div>
       </div>
@@ -258,10 +355,10 @@ export default function Profile() {
               onClick={() => router.back()}
               className="text-blue-600 hover:text-blue-700"
             >
-              ← Back
+              ← Quay lại
             </button>
-            <h1 className="text-3xl font-bold text-gray-800">My Profile</h1>
-            <p className="text-gray-600 mt-2">Manage your account information and posts</p>
+            <h1 className="text-3xl font-bold text-gray-800">Hồ sơ của tôi</h1>
+            <p className="text-gray-600 mt-2">Quản lý thông tin tài khoản và bài đăng của bạn</p>
           </div>
         </div>
 
@@ -282,11 +379,12 @@ export default function Profile() {
           <div className="bg-white rounded-lg shadow-sm mb-6">
             <div className="flex border-b overflow-x-auto">
               {[
-                { key: 'view', label: 'View Profile' },
-                { key: 'edit', label: 'Edit Profile' },
-                { key: 'contact', label: 'Contact Info' },
-                { key: 'display-name', label: 'Display Name' },
-                { key: 'avatar', label: 'Avatar' },
+                { key: 'view', label: 'Xem hồ sơ' },
+                { key: 'edit', label: 'Sửa hồ sơ' },
+                { key: 'contact', label: 'Liên hệ' },
+                { key: 'display-name', label: 'Tên hiển thị' },
+                { key: 'avatar', label: 'Ảnh đại diện' },
+                { key: 'change-password', label: 'Đổi mật khẩu' },
                 { key: 'my-posts', label: 'Bài đăng của tôi' },
               ].map(tab => (
                 <button
@@ -313,87 +411,96 @@ export default function Profile() {
             {/* View Profile Tab */}
             {activeTab === 'view' && (
               <div className="space-y-6">
-                {profile.avatarUrl && (
+                {profile.avatarUrl && !avatarLoadError && (
                   <div className="flex justify-center">
                     <img
                       src={profile.avatarUrl}
-                      alt="Avatar"
+                      alt="Ảnh đại diện"
+                      onError={() => setAvatarLoadError(true)}
                       className="w-24 h-24 rounded-full object-cover border-4 border-blue-600"
                     />
                   </div>
                 )}
 
+                {(!profile.avatarUrl || avatarLoadError) && (
+                  <div className="flex justify-center">
+                    <div className="w-24 h-24 rounded-full bg-blue-100 border-4 border-blue-600 flex items-center justify-center text-blue-700 text-2xl font-bold">
+                      {(profile.displayName || profile.fullName || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-semibold text-gray-600">Display Name</label>
-                    <p className="text-lg text-gray-800">{profile.displayName || 'Not set'}</p>
+                    <label className="text-sm font-semibold text-gray-600">Tên hiển thị</label>
+                    <p className="text-lg text-gray-800">{profile.displayName || 'Chưa cập nhật'}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-gray-600">Full Name</label>
-                    <p className="text-lg text-gray-800">{profile.fullName || 'Not set'}</p>
+                    <label className="text-sm font-semibold text-gray-600">Họ và tên</label>
+                    <p className="text-lg text-gray-800">{profile.fullName || 'Chưa cập nhật'}</p>
                   </div>
 
                   <div>
                     <label className="text-sm font-semibold text-gray-600">Email</label>
-                    <p className="text-lg text-gray-800">{profile.email || 'Not set'}</p>
+                    <p className="text-lg text-gray-800">{profile.email || 'Chưa cập nhật'}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-gray-600">Phone</label>
-                    <p className="text-lg text-gray-800">{profile.phone || 'Not set'}</p>
+                    <label className="text-sm font-semibold text-gray-600">Số điện thoại</label>
+                    <p className="text-lg text-gray-800">{profile.phone || 'Chưa cập nhật'}</p>
                   </div>
 
                   <div>
-                    <label className="text-sm font-semibold text-gray-600">Gender</label>
-                    <p className="text-lg text-gray-800">{profile.gender || 'Not set'}</p>
+                    <label className="text-sm font-semibold text-gray-600">Giới tính</label>
+                    <p className="text-lg text-gray-800">{profile.gender || 'Chưa cập nhật'}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-gray-600">Birthday</label>
+                    <label className="text-sm font-semibold text-gray-600">Ngày sinh</label>
                     <p className="text-lg text-gray-800">
-                      {profile.birthday ? new Date(profile.birthday).toLocaleDateString() : 'Not set'}
+                      {profile.birthday ? new Date(profile.birthday).toLocaleDateString('vi-VN') : 'Chưa cập nhật'}
                     </p>
                   </div>
 
                   <div className="col-span-2">
-                    <label className="text-sm font-semibold text-gray-600">Address</label>
-                    <p className="text-lg text-gray-800">{profile.address || 'Not set'}</p>
+                    <label className="text-sm font-semibold text-gray-600">Địa chỉ</label>
+                    <p className="text-lg text-gray-800">{profile.address || 'Chưa cập nhật'}</p>
                   </div>
 
                   <div className="col-span-2">
                     <label className="text-sm font-semibold text-gray-600">Bio</label>
-                    <p className="text-lg text-gray-800">{profile.bio || 'Not set'}</p>
+                    <p className="text-lg text-gray-800">{profile.bio || 'Chưa cập nhật'}</p>
                   </div>
                 </div>
 
                 <div className="border-t pt-6">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <label className="font-semibold text-gray-600">Verified</label>
-                      <p>{profile.isVerified ? 'Yes' : 'No'}</p>
+                      <label className="font-semibold text-gray-600">Đã xác thực</label>
+                      <p>{profile.isVerified ? 'Có' : 'Không'}</p>
                     </div>
                     <div>
-                      <label className="font-semibold text-gray-600">Account Active</label>
-                      <p>{profile.isActive ? 'Yes' : 'No'}</p>
+                      <label className="font-semibold text-gray-600">Tài khoản hoạt động</label>
+                      <p>{profile.isActive ? 'Có' : 'Không'}</p>
                     </div>
                     <div>
-                      <label className="font-semibold text-gray-600">Member Since</label>
-                      <p>{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A'}</p>
+                      <label className="font-semibold text-gray-600">Tham gia từ</label>
+                      <p>{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('vi-VN') : 'Chưa có'}</p>
                     </div>
                     <div>
-                      <label className="font-semibold text-gray-600">Last Updated</label>
-                      <p>{new Date(profile.updatedAt).toLocaleDateString()}</p>
+                      <label className="font-semibold text-gray-600">Cập nhật lần cuối</label>
+                      <p>{new Date(profile.updatedAt).toLocaleDateString('vi-VN')}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Display Name Change Info */}
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-blue-900 mb-2">Display Name Change Info</h3>
+                  <h3 className="font-semibold text-blue-900 mb-2">Thông tin đổi tên hiển thị</h3>
                   <div className="text-sm text-blue-800 space-y-1">
-                    <p>Can change now: {profile.displayNameChangeInfo.canChange ? 'Yes' : 'No'}</p>
-                    <p>Changes made: {profile.displayNameChangeInfo.changeCount}</p>
-                    <p>Days until next change: {profile.displayNameChangeInfo.daysUntilNextChange}</p>
+                    <p>Có thể đổi ngay: {profile.displayNameChangeInfo.canChange ? 'Có' : 'Không'}</p>
+                    <p>Số lần đã đổi: {profile.displayNameChangeInfo.changeCount}</p>
+                    <p>Số ngày tới lần đổi tiếp theo: {profile.displayNameChangeInfo.daysUntilNextChange}</p>
                     {profile.displayNameChangeInfo.lastChanged && (
-                      <p>Last changed: {new Date(profile.displayNameChangeInfo.lastChanged).toLocaleDateString()}</p>
+                      <p>Lần đổi gần nhất: {new Date(profile.displayNameChangeInfo.lastChanged).toLocaleDateString('vi-VN')}</p>
                     )}
                   </div>
                 </div>
@@ -405,9 +512,9 @@ export default function Profile() {
                     disabled={isSaving}
                     className="bg-red-600 text-white px-6 py-2 rounded hover:bg-red-700 disabled:bg-gray-400"
                   >
-                    Delete Account
+                    Xóa tài khoản
                   </button>
-                  <p className="text-xs text-gray-600 mt-2">Account can be recovered within 30 days</p>
+                  <p className="text-xs text-gray-600 mt-2">Có thể khôi phục tài khoản trong vòng 30 ngày</p>
                 </div>
               </div>
             )}
@@ -422,7 +529,7 @@ export default function Profile() {
                 className="space-y-4"
               >
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Họ và tên</label>
                   <input
                     type="text"
                     value={editForm.fullName || ''}
@@ -430,7 +537,7 @@ export default function Profile() {
                     maxLength={255}
                     className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Max 255 characters</p>
+                  <p className="text-xs text-gray-500 mt-1">Tối đa 255 ký tự</p>
                 </div>
 
                 <div>
@@ -442,11 +549,11 @@ export default function Profile() {
                     rows={4}
                     className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Max 500 characters</p>
+                  <p className="text-xs text-gray-500 mt-1">Tối đa 500 ký tự</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Địa chỉ</label>
                   <input
                     type="text"
                     value={editForm.address || ''}
@@ -454,26 +561,26 @@ export default function Profile() {
                     maxLength={255}
                     className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Max 255 characters</p>
+                  <p className="text-xs text-gray-500 mt-1">Tối đa 255 ký tự</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Giới tính</label>
                     <select
                       value={editForm.gender || ''}
                       onChange={e => setEditForm({ ...editForm, gender: e.target.value || undefined })}
                       className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                     >
-                      <option value="">Not set</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
+                      <option value="">Chưa cập nhật</option>
+                      <option value="male">Nam</option>
+                      <option value="female">Nữ</option>
+                      <option value="other">Khác</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Birthday</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Ngày sinh</label>
                     <input
                       type="date"
                       value={
@@ -492,7 +599,7 @@ export default function Profile() {
                   disabled={isSaving}
                   className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                 >
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
                 </button>
               </form>
             )}
@@ -525,7 +632,7 @@ export default function Profile() {
                     placeholder="0901234567"
                     className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Vietnam format: 10-11 digits starting with 0 or +84</p>
+                  <p className="text-xs text-gray-500 mt-1">Định dạng Việt Nam: 10-11 số bắt đầu bằng 0 hoặc +84</p>
                 </div>
 
                 <button
@@ -533,7 +640,7 @@ export default function Profile() {
                   disabled={isSaving}
                   className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                 >
-                  {isSaving ? 'Saving...' : 'Update Contact Info'}
+                  {isSaving ? 'Đang lưu...' : 'Cập nhật thông tin liên hệ'}
                 </button>
               </form>
             )}
@@ -549,28 +656,28 @@ export default function Profile() {
               >
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                   <p className="text-sm text-blue-800">
-                    <strong>Restriction:</strong> You can only change your display name once every 30 days.
+                    <strong>Lưu ý:</strong> Bạn chỉ có thể đổi tên hiển thị 1 lần trong 30 ngày.
                     {!profile.displayNameChangeInfo.canChange && (
                       <div className="mt-2">
-                        Days remaining: <strong>{profile.displayNameChangeInfo.daysUntilNextChange}</strong>
+                        Số ngày còn lại: <strong>{profile.displayNameChangeInfo.daysUntilNextChange}</strong>
                       </div>
                     )}
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">New Display Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Tên hiển thị mới</label>
                   <input
                     type="text"
                     value={displayNameForm.displayName}
                     onChange={e => setDisplayNameForm({ displayName: e.target.value })}
                     minLength={3}
                     maxLength={100}
-                    placeholder="3-100 characters"
+                    placeholder="3-100 ký tự"
                     className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                     disabled={!profile.displayNameChangeInfo.canChange}
                   />
-                  <p className="text-xs text-gray-500 mt-1">Letters, numbers, spaces only. 3-100 characters.</p>
+                  <p className="text-xs text-gray-500 mt-1">Chỉ dùng chữ cái, số, khoảng trắng. Độ dài 3-100 ký tự.</p>
                 </div>
 
                 <button
@@ -578,7 +685,7 @@ export default function Profile() {
                   disabled={isSaving || !profile.displayNameChangeInfo.canChange}
                   className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                 >
-                  {isSaving ? 'Changing...' : 'Change Display Name'}
+                  {isSaving ? 'Đang đổi...' : 'Đổi tên hiển thị'}
                 </button>
               </form>
             )}
@@ -596,22 +703,28 @@ export default function Profile() {
                   <div className="flex justify-center mb-4">
                     <img
                       src={avatarForm.avatarUrl}
-                      alt="Avatar Preview"
+                      alt="Xem trước ảnh đại diện"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
                       className="w-32 h-32 rounded-full object-cover border-4 border-blue-600"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Avatar URL</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Đường dẫn ảnh đại diện (URL)</label>
                   <input
                     type="url"
                     value={avatarForm.avatarUrl}
-                    onChange={e => setAvatarForm({ avatarUrl: e.target.value })}
+                    onChange={e => {
+                      setAvatarForm({ avatarUrl: normalizeImageUrl(e.target.value) })
+                      setAvatarLoadError(false)
+                    }}
                     placeholder="https://example.com/avatar.jpg"
                     className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Must be a valid URL. Max 500 characters.</p>
+                  <p className="text-xs text-gray-500 mt-1">Vui lòng nhập URL hợp lệ. Tối đa 500 ký tự.</p>
                 </div>
 
                 <button
@@ -619,7 +732,57 @@ export default function Profile() {
                   disabled={isSaving}
                   className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                 >
-                  {isSaving ? 'Uploading...' : 'Update Avatar'}
+                  {isSaving ? 'Đang cập nhật...' : 'Cập nhật ảnh đại diện'}
+                </button>
+              </form>
+            )}
+
+            {/* Change Password Tab */}
+            {activeTab === 'change-password' && (
+              <form
+                onSubmit={e => {
+                  e.preventDefault()
+                  handleChangePassword()
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Mật khẩu hiện tại</label>
+                  <input
+                    type="password"
+                    value={changePasswordForm.currentPassword}
+                    onChange={e => setChangePasswordForm({ ...changePasswordForm, currentPassword: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Mật khẩu mới</label>
+                  <input
+                    type="password"
+                    value={changePasswordForm.newPassword}
+                    onChange={e => setChangePasswordForm({ ...changePasswordForm, newPassword: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Tối thiểu 8 ký tự</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Xác nhận mật khẩu mới</label>
+                  <input
+                    type="password"
+                    value={changePasswordForm.confirmPassword}
+                    onChange={e => setChangePasswordForm({ ...changePasswordForm, confirmPassword: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 disabled:bg-gray-400"
+                >
+                  {isSaving ? 'Đang đổi mật khẩu...' : 'Đổi mật khẩu'}
                 </button>
               </form>
             )}
@@ -633,25 +796,25 @@ export default function Profile() {
                     disabled={postsLoading}
                     className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                   >
-                    {postsLoading ? 'Loading...' : 'Load My Posts'}
+                    {postsLoading ? 'Đang tải...' : 'Tải bài đăng của tôi'}
                   </button>
                 )}
 
                 {postsLoading && (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                    <p className="text-gray-600">Loading posts...</p>
+                    <p className="text-gray-600">Đang tải bài đăng...</p>
                   </div>
                 )}
 
                 {postsLoaded && myPosts.length === 0 && (
                   <div className="text-center py-8">
-                    <p className="text-gray-600 mb-4">You haven't created any posts yet</p>
+                    <p className="text-gray-600 mb-4">Bạn chưa tạo bài đăng nào</p>
                     <button
                       onClick={() => router.push('/posts/create')}
                       className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
                     >
-                      + Create New Post
+                      + Tạo bài đăng mới
                     </button>
                   </div>
                 )}
@@ -659,12 +822,12 @@ export default function Profile() {
                 {myPosts.length > 0 && (
                   <div className="space-y-4">
                     <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-semibold">My Posts ({myPosts.length})</h3>
+                      <h3 className="text-lg font-semibold">Bài đăng của tôi ({myPosts.length})</h3>
                       <button
                         onClick={() => router.push('/posts/create')}
                         className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
                       >
-                        + New Post
+                        + Bài đăng mới
                       </button>
                     </div>
 
@@ -673,10 +836,10 @@ export default function Profile() {
                         {editingPostId === post.id ? (
                           // Edit Mode
                           <div className="p-6 space-y-4">
-                            <h4 className="text-lg font-semibold">Edit Post</h4>
+                            <h4 className="text-lg font-semibold">Chỉnh sửa bài đăng</h4>
 
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề</label>
                               <input
                                 type="text"
                                 value={editPostForm.title || ''}
@@ -687,7 +850,7 @@ export default function Profile() {
                             </div>
 
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
                               <textarea
                                 value={editPostForm.description || ''}
                                 onChange={e => setEditPostForm({ ...editPostForm, description: e.target.value })}
@@ -698,7 +861,7 @@ export default function Profile() {
 
                             <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Địa điểm</label>
                                 <input
                                   type="text"
                                   value={editPostForm.location || ''}
@@ -709,7 +872,7 @@ export default function Profile() {
                               </div>
 
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Budget (VND)</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Ngân sách (VND)</label>
                                 <input
                                   type="number"
                                   value={editPostForm.budget || ''}
@@ -720,7 +883,7 @@ export default function Profile() {
                             </div>
 
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Desired Time</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Thời gian mong muốn</label>
                               <input
                                 type="datetime-local"
                                 value={editPostForm.desiredTime ? new Date(editPostForm.desiredTime).toISOString().slice(0, 16) : ''}
@@ -734,13 +897,13 @@ export default function Profile() {
                                 onClick={() => handleUpdatePost(post.id)}
                                 className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
                               >
-                                Save Changes
+                                Lưu thay đổi
                               </button>
                               <button
                                 onClick={cancelEditPost}
                                 className="flex-1 bg-gray-400 text-white py-2 rounded hover:bg-gray-500"
                               >
-                                Cancel
+                                Hủy
                               </button>
                             </div>
                           </div>
@@ -760,7 +923,7 @@ export default function Profile() {
                                     : 'bg-gray-100 text-gray-800'
                                   }`}
                               >
-                                {post.status === 'open' ? '✅ Open' : post.status === 'closed' ? '❌ Closed' : post.status}
+                                {post.status === 'open' ? '✅ Đang mở' : post.status === 'closed' ? '❌ Đã đóng' : post.status}
                               </span>
                             </div>
 
@@ -796,27 +959,27 @@ export default function Profile() {
                                 onClick={() => router.push(`/posts/${post.id}`)}
                                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm"
                               >
-                                View
+                                Xem
                               </button>
                               <button
                                 onClick={() => startEditPost(post)}
                                 className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 text-sm"
                               >
-                                Edit
+                                Sửa
                               </button>
                               {post.status === 'open' && (
                                 <button
                                   onClick={() => handleClosePost(post.id)}
                                   className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 text-sm"
                                 >
-                                  Close
+                                  Đóng
                                 </button>
                               )}
                               <button
                                 onClick={() => handleDeletePost(post.id)}
                                 className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm"
                               >
-                                Delete
+                                Xóa
                               </button>
                             </div>
                           </div>

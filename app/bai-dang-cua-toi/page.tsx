@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Header from '@/app/components/Header'
 import { PostService } from '@/lib/api/post.service'
 import { AuthService } from '@/lib/api/auth.service'
+import { ProfileService } from '@/lib/api/profile-new.service'
 import SkeletonPost from '@/app/components/SkeletonPost'
 
 export default function MyPostsPage() {
@@ -16,14 +17,25 @@ export default function MyPostsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   useEffect(() => {
-    // Kiểm tra đăng nhập
-    if (!AuthService.isAuthenticated()) {
-      alert('Vui lòng đăng nhập để xem bài đăng của bạn!')
-      router.push('/dang-nhap')
-      return
+    const initializePage = async () => {
+      if (!AuthService.isAuthenticated()) {
+        alert('Vui lòng đăng nhập để xem bài đăng của bạn!')
+        router.push('/dang-nhap')
+        return
+      }
+
+      try {
+        // Xác thực token thuộc user hiện tại trước khi tải bài đăng
+        await ProfileService.getMyProfile()
+        await loadMyPosts()
+      } catch (error: any) {
+        alert(error?.message || 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!')
+        router.push('/dang-nhap')
+      }
     }
-    loadMyPosts()
-  }, [])
+
+    initializePage()
+  }, [router])
 
   const loadMyPosts = async () => {
     try {

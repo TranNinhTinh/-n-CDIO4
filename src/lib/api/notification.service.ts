@@ -3,7 +3,8 @@ import { AuthService } from './auth.service'
 import { notificationSocketService } from './notification-socket.service'
 import { API_CONFIG } from './config'
 
-const API_BASE = API_CONFIG.BASE_URL
+// Use local proxy route instead of calling backend directly to avoid CORS issues
+const API_BASE = '/api'
 
 // Helper function để xử lý fetch với authentication
 async function authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -44,10 +45,11 @@ export interface Notification {
   title: string
   message: string
   metadata?: Record<string, any>
+  data?: Record<string, any>
   actionUrl?: string
   isRead: boolean
   readAt?: Date
-  createdAt: Date
+  createdAt: string | Date
 }
 
 export interface NotificationListResponse {
@@ -176,6 +178,13 @@ class NotificationService {
     }
 
     return { success: true }
+  }
+
+  /**
+   * Backward-compatible alias used by UI page
+   */
+  async deleteAllRead(): Promise<{ success: boolean }> {
+    return this.deleteReadNotifications()
   }
 
   /**

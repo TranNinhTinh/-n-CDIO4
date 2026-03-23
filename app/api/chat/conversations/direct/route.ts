@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://postmaxillary-variably-justa.ngrok-free.dev/api/v1'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_DOMAIN || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1'
 
 // POST /api/chat/conversations/direct - Tạo conversation riêng với thợ
 export async function POST(request: NextRequest) {
@@ -15,19 +15,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { workerId } = body
+    const providerId = body.providerId || body.workerId
 
-    if (!workerId) {
+    if (!providerId) {
       return NextResponse.json(
-        { message: 'Worker ID is required' },
+        { message: 'Provider ID is required' },
         { status: 400 }
       )
     }
 
-    console.log('🔔 [Create Direct Conversation] WorkerId:', workerId)
+    console.log('🔔 [Create Direct Conversation] ProviderId:', providerId)
     console.log('🔔 [Create Direct Conversation] Calling backend API...')
 
-    // Backend yêu cầu "providerId" không phải "workerId"
     const response = await fetch(`${API_BASE_URL}/chat/conversations/direct`, {
       method: 'POST',
       headers: {
@@ -35,7 +34,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
       },
-      body: JSON.stringify({ providerId: workerId })  // ✅ Đổi key thành providerId
+      body: JSON.stringify({ providerId })
     })
 
     const data = await response.json()

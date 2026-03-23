@@ -112,14 +112,11 @@ export class UserService {
     try {
       console.log('🔵 Change Password Request')
 
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}/users/change-password`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify(data),
-        }
-      )
+      const response = await fetch('/api/users/change-password', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(data),
+      })
 
       console.log('🔵 Change Password Response Status:', response.status)
 

@@ -265,10 +265,11 @@ export default function CreatePostPage() {
                         e.preventDefault()
                         const input = e.currentTarget
                         const url = input.value.trim()
-                        if (url && !formData.imageUrls.includes(url)) {
+                        const currentImageUrls = formData.imageUrls || []
+                        if (url && !currentImageUrls.includes(url)) {
                           setFormData({
                             ...formData,
-                            imageUrls: [...formData.imageUrls, url]
+                            imageUrls: [...currentImageUrls, url]
                           })
                           input.value = ''
                         }
@@ -281,10 +282,11 @@ export default function CreatePostPage() {
                     onClick={() => {
                       const input = document.getElementById('imageInput') as HTMLInputElement
                       const url = input?.value.trim()
-                      if (url && !formData.imageUrls.includes(url)) {
+                      const currentImageUrls = formData.imageUrls || []
+                      if (url && !currentImageUrls.includes(url)) {
                         setFormData({
                           ...formData,
-                          imageUrls: [...formData.imageUrls, url]
+                          imageUrls: [...currentImageUrls, url]
                         })
                         if (input) input.value = ''
                       }
@@ -311,9 +313,10 @@ export default function CreatePostPage() {
                         <button
                           type="button"
                           onClick={() => {
+                            const currentImageUrls = formData.imageUrls || []
                             setFormData({
                               ...formData,
-                              imageUrls: formData.imageUrls.filter((_, i) => i !== index)
+                              imageUrls: currentImageUrls.filter((_, i) => i !== index)
                             })
                           }}
                           className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"

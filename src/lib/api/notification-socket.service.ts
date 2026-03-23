@@ -2,7 +2,8 @@
 import { io, Socket } from 'socket.io-client'
 import { AuthService } from './auth.service'
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
+// Get socket URL - use current origin in development
+const socketUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000')
 
 export interface Notification {
     id: string

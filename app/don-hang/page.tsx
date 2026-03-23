@@ -9,10 +9,14 @@ export default function DonHangPage() {
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
   const [stats, setStats] = useState<OrderStats | null>(null)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [roleFilter, setRoleFilter] = useState<'customer' | 'provider' | ''>('')
+  const [orderNumberQuery, setOrderNumberQuery] = useState('')
+  const [searchingOrder, setSearchingOrder] = useState(false)
 
   useEffect(() => {
     const token = AuthService.getToken()
@@ -29,46 +33,18 @@ export default function DonHangPage() {
     try {
       setLoading(true)
       console.log('📦 [Orders Page] Fetching orders...')
-      
-      try {
-        // Thử gọi API thật trước
-        const response = await orderService.getOrders({
-          status: statusFilter || undefined,
-          role: roleFilter || undefined,
-          limit: 50
-        })
-        console.log('✅ [Orders Page] Orders fetched from API:', response)
-        setOrders(response.data)
-        setError('')
-      } catch (apiErr: any) {
-        console.warn('⚠️ [Orders Page] API không khả dụng, sử dụng mock data')
-        
-        // Backend chưa có API, dùng mock data
-        // TODO: Xóa mock data này khi backend đã sẵn sàng
-        const mockOrders: Order[] = [
-          {
-            id: 'mock-order-1',
-            orderNumber: 'ORD-001',
-            quoteId: 'quote-1',
-            postId: 'post-1',
-            customerId: 'customer-1',
-            providerId: 'provider-1',
-            customerName: 'Khách hàng A',
-            providerName: 'Thợ B',
-            price: 500000,
-            description: 'Sửa chữa điện nước',
-            status: 'CONFIRMED',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        ]
-        
-        setOrders(mockOrders)
-        setError('⚠️ Đang dùng dữ liệu mẫu. Backend API chưa sẵn sàng.')
-      }
+
+      const response = await orderService.getOrders({
+        status: statusFilter || undefined,
+        role: roleFilter || undefined,
+        limit: 50
+      })
+      console.log('✅ [Orders Page] Orders fetched from API:', response)
+      setOrders(response.data)
+      setError('')
     } catch (err: any) {
       console.error('❌ [Orders Page] Fatal error:', err)
-      setError('Lỗi nghiêm trọng: ' + err.message)
+      setError(err.message || 'Không thể tải đơn hàng từ API')
       setOrders([])
     } finally {
       setLoading(false)
@@ -78,25 +54,13 @@ export default function DonHangPage() {
   const fetchStats = async () => {
     try {
       console.log('📊 [Orders Page] Fetching stats...')
-      
-      try {
-        const response = await orderService.getStats()
-        console.log('✅ [Orders Page] Stats fetched from API:', response)
-        setStats(response)
-      } catch (apiErr) {
-        console.warn('⚠️ [Orders Page] Stats API không khả dụng, dùng giá trị mặc định')
-        
-        // Backend chưa có API, dùng stats mặc định
-        setStats({
-          total: orders.length,
-          pending: orders.filter(o => o.status === 'PENDING').length,
-          inProgress: orders.filter(o => o.status === 'IN_PROGRESS').length,
-          completed: orders.filter(o => o.status === 'COMPLETED').length,
-          cancelled: orders.filter(o => o.status === 'CANCELLED').length
-        })
-      }
+
+      const response = await orderService.getStats()
+      console.log('✅ [Orders Page] Stats fetched from API:', response)
+      setStats(response)
     } catch (err: any) {
       console.error('❌ [Orders Page] Error fetching stats:', err)
+      setStats(null)
     }
   }
 
@@ -140,6 +104,39 @@ export default function DonHangPage() {
     } catch (err) {
       console.error('Error canceling order:', err)
       alert('Không thể hủy đơn hàng')
+    }
+  }
+
+  const handleSearchByOrderNumber = async () => {
+    const value = orderNumberQuery.trim()
+    if (!value) {
+      fetchOrders()
+      return
+    }
+
+    try {
+      setSearchingOrder(true)
+      setError('')
+      const order = await orderService.getOrderByNumber(value)
+      setOrders(order ? [order] : [])
+    } catch (err: any) {
+      console.error('Error searching order by number:', err)
+      setOrders([])
+      setError(err?.message || 'Không tìm thấy đơn hàng theo mã số')
+    } finally {
+      setSearchingOrder(false)
+    }
+  }
+
+  const handleViewOrderDetail = async (orderId: string) => {
+    try {
+      setDetailLoadingId(orderId)
+      const detail = await orderService.getOrderById(orderId)
+      setSelectedOrder(detail)
+    } catch (err: any) {
+      alert(err?.message || 'Không thể tải chi tiết đơn hàng')
+    } finally {
+      setDetailLoadingId(null)
     }
   }
 
@@ -299,6 +296,24 @@ export default function DonHangPage() {
               Thợ
             </button>
           </div>
+
+          <div className="flex gap-2 mt-3">
+            <input
+              type="text"
+              value={orderNumberQuery}
+              onChange={(e) => setOrderNumberQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearchByOrderNumber()}
+              placeholder="Tìm theo mã đơn (vd: DH123456)"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+            />
+            <button
+              onClick={handleSearchByOrderNumber}
+              disabled={searchingOrder}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {searchingOrder ? 'Đang tìm...' : 'Tra mã đơn'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -308,6 +323,43 @@ export default function DonHangPage() {
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
               {error}
+            </div>
+          )}
+
+          {selectedOrder && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-4 rounded-lg mb-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-blue-700">Chi tiết đơn hàng đã chọn</p>
+                  <h3 className="text-lg font-semibold mt-1">#{selectedOrder.orderNumber}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  className="px-3 py-1.5 text-xs rounded-lg bg-white text-blue-700 border border-blue-200 hover:bg-blue-100"
+                >
+                  Đóng
+                </button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="bg-white border border-blue-100 rounded-lg p-3">
+                  <p className="text-blue-700">Giá trị đơn</p>
+                  <p className="font-semibold mt-1">{selectedOrder.price.toLocaleString('vi-VN')}đ</p>
+                </div>
+                <div className="bg-white border border-blue-100 rounded-lg p-3">
+                  <p className="text-blue-700">Trạng thái</p>
+                  <p className="font-semibold mt-1">{getStatusText(selectedOrder.status)}</p>
+                </div>
+                <div className="bg-white border border-blue-100 rounded-lg p-3">
+                  <p className="text-blue-700">Ngày tạo</p>
+                  <p className="font-semibold mt-1">{new Date(selectedOrder.createdAt).toLocaleString('vi-VN')}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 bg-white border border-blue-100 rounded-lg p-3 text-sm text-gray-700">
+                {selectedOrder.description || 'Không có mô tả'}
+              </div>
             </div>
           )}
 
@@ -347,10 +399,11 @@ export default function DonHangPage() {
                   {/* Actions */}
                   <div className="flex space-x-2 mt-3 pt-3 border-t">
                     <button
-                      onClick={() => router.push(`/don-hang/${order.id}`)}
+                      onClick={() => handleViewOrderDetail(order.id)}
+                      disabled={detailLoadingId === order.id}
                       className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
                     >
-                      Xem chi tiết
+                      {detailLoadingId === order.id ? 'Đang tải...' : 'Xem chi tiết'}
                     </button>
                     
                     {order.status === 'CONFIRMED' && roleFilter === 'provider' && (

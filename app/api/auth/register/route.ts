@@ -6,12 +6,12 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_DOMAIN
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body = (await request.json()) as Record<string, any>
 
     console.log('🔵 Proxy Register Request - Original:', JSON.stringify(body, null, 2))
 
     // Lấy số điện thoại
-    let originalPhone = body.phone || body.phoneNumber
+    let originalPhone: string | undefined = body.phone || body.phoneNumber
 
     console.log('📱 Original phone from body:', originalPhone)
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Tạo danh sách các format để thử
-    let phoneFormats = []
+    let phoneFormats: string[] = []
 
     if (originalPhone) {
       // Loại bỏ tất cả ký tự không phải số
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     console.log('🎯 Phone formats to try:', phoneFormats)
 
-    let lastError = null
+    let lastError: { data: any; status: number } | null = null
     let attemptNumber = 0
 
     // Thử đăng ký với từng format

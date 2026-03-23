@@ -4,6 +4,7 @@ interface ConversationItemProps {
   conversation: Conversation
   otherUserName: string
   otherUserAvatar?: string
+  unreadCount: number
   isActive: boolean
   onClick: () => void
   onDelete: () => void
@@ -13,6 +14,7 @@ export default function ConversationItem({
   conversation,
   otherUserName,
   otherUserAvatar,
+  unreadCount,
   isActive,
   onClick,
   onDelete,
@@ -50,9 +52,9 @@ export default function ConversationItem({
             </div>
           )}
         </div>
-        {(conversation.customerUnreadCount > 0 || conversation.providerUnreadCount > 0) && (
+        {unreadCount > 0 && (
           <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-            {Math.max(conversation.customerUnreadCount, conversation.providerUnreadCount) > 9 ? '9+' : Math.max(conversation.customerUnreadCount, conversation.providerUnreadCount)}
+            {unreadCount > 9 ? '9+' : unreadCount}
           </div>
         )}
       </div>

@@ -71,6 +71,8 @@ export default function MessageList({ messages, currentUserId }: MessageListProp
           {/* Messages */}
           {groupMessages.map((message) => {
             const isOwn = message.senderId === currentUserId
+            const senderName = (message as any).senderName || 'Người dùng'
+            const senderAvatar = (message as any).senderAvatar as string | undefined
             return (
               <div
                 key={message.id}
@@ -80,15 +82,15 @@ export default function MessageList({ messages, currentUserId }: MessageListProp
                   {/* Avatar */}
                   {!isOwn && (
                     <div className="w-8 h-8 rounded-full bg-gray-300 overflow-hidden flex-shrink-0">
-                      {message.senderAvatar ? (
+                      {senderAvatar ? (
                         <img
-                          src={message.senderAvatar}
-                          alt={message.senderName}
+                          src={senderAvatar}
+                          alt={senderName}
                           className="w-full h-full object-cover"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold">
-                          {message.senderName.charAt(0)}
+                          {senderName.charAt(0)}
                         </div>
                       )}
                     </div>
@@ -97,7 +99,7 @@ export default function MessageList({ messages, currentUserId }: MessageListProp
                   {/* Message bubble */}
                   <div>
                     {!isOwn && (
-                      <p className="text-xs text-gray-600 mb-1 px-1">{message.senderName}</p>
+                      <p className="text-xs text-gray-600 mb-1 px-1">{senderName}</p>
                     )}
                     <div
                       className={`rounded-2xl px-4 py-2 ${
